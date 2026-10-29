@@ -18,8 +18,17 @@ object Prefs {
     private lateinit var settings: SharedPreferences
     private lateinit var secure: SharedPreferences
 
-    var eink by mutableStateOf(true)
+    const val THEME_COLOR = 0
+    const val THEME_WHITE = 1 // black on white
+    const val THEME_BLACK = 2 // white on black
+    val THEME_LABELS = arrayOf("Color", "White", "Black")
+
+    var theme by mutableIntStateOf(THEME_WHITE)
         private set
+
+    /** True for either monochrome theme; this is what switches on the e-ink behaviour. */
+    val eink: Boolean get() = theme != THEME_COLOR
+
     var pagedLists by mutableStateOf(true)
         private set
     var showArt by mutableStateOf(true)
@@ -41,7 +50,9 @@ object Prefs {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
         )
-        eink = settings.getBoolean("eink", true)
+        // Older builds stored a single e-ink flag instead of a theme.
+        val legacy = if (settings.getBoolean("eink", true)) THEME_WHITE else THEME_COLOR
+        theme = settings.getInt("theme", legacy).coerceIn(THEME_LABELS.indices)
         pagedLists = settings.getBoolean("paged", true)
         showArt = settings.getBoolean("art", true)
         sortAz = settings.getBoolean("sort_az", false)
@@ -49,7 +60,11 @@ object Prefs {
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
 
-    fun toggleEink() { eink = !eink; settings.edit().putBoolean("eink", eink).apply() }
+    fun cycleTheme() {
+        theme = (theme + 1) % THEME_LABELS.size
+        settings.edit().putInt("theme", theme).apply()
+    }
+
     fun togglePaged() { pagedLists = !pagedLists; settings.edit().putBoolean("paged", pagedLists).apply() }
     fun toggleArt() { showArt = !showArt; settings.edit().putBoolean("art", showArt).apply() }
 

@@ -1,14 +1,18 @@
 package app.einkradio.ui
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
+import androidx.core.view.WindowCompat
 import app.einkradio.Prefs
 
 private val Ink = Color.Black
@@ -20,7 +24,7 @@ private val AccentDark = Color(0xFF1C3AA8)
 private val AccentOnDark = Color(0xFF7C9BFF)
 
 /** Pure black on pure white: no greys, so nothing dithers on a monochrome panel. */
-private val EinkColors = lightColorScheme(
+private val WhiteColors = lightColorScheme(
     primary = Ink, onPrimary = Paper,
     secondary = Ink, onSecondary = Paper,
     primaryContainer = Paper, onPrimaryContainer = Ink,
@@ -28,6 +32,17 @@ private val EinkColors = lightColorScheme(
     surface = Paper, onSurface = Ink,
     surfaceVariant = Paper, onSurfaceVariant = Ink,
     outline = Ink, outlineVariant = Ink,
+)
+
+/** The same, inverted: white on pure black. */
+private val BlackColors = darkColorScheme(
+    primary = Paper, onPrimary = Ink,
+    secondary = Paper, onSecondary = Ink,
+    primaryContainer = Ink, onPrimaryContainer = Paper,
+    background = Ink, onBackground = Paper,
+    surface = Ink, onSurface = Paper,
+    surfaceVariant = Ink, onSurfaceVariant = Paper,
+    outline = Paper, outlineVariant = Paper,
 )
 
 private val LightColors = lightColorScheme(
@@ -49,11 +64,28 @@ val AccentBottom = AccentDark
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
-    val colors = when {
-        Prefs.eink -> EinkColors
-        isSystemInDarkTheme() -> DarkColors
-        else -> LightColors
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (Prefs.theme) {
+        Prefs.THEME_BLACK -> true
+        Prefs.THEME_WHITE -> false
+        else -> systemDark
     }
+    val colors = when (Prefs.theme) {
+        Prefs.THEME_WHITE -> WhiteColors
+        Prefs.THEME_BLACK -> BlackColors
+        else -> if (dark) DarkColors else LightColors
+    }
+
+    // Keep the status and navigation bar icons readable against the page.
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
+
     val base = LocalDensity.current
     CompositionLocalProvider(
         LocalDensity provides Density(base.density, base.fontScale * Prefs.textScale),
@@ -62,7 +94,7 @@ fun AppTheme(content: @Composable () -> Unit) {
     }
 }
 
-/** Secondary text colour; stays solid in e-ink mode so it doesn't render as dithered grey. */
+/** Secondary text colour; stays solid in the monochrome themes so it doesn't render as dithered grey. */
 @Composable
 fun mutedColor(): Color {
     val fg = MaterialTheme.colorScheme.onBackground

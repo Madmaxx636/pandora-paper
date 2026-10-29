@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -146,9 +147,12 @@ private fun RoundButton(
 }
 
 @Composable
-private fun Cover(url: String?, modifier: Modifier = Modifier, radius: Dp = CoverRadius) {
+private fun Cover(urls: List<String>, modifier: Modifier = Modifier, radius: Dp = CoverRadius) {
     val shape = RoundedCornerShape(radius)
     val grey = if (Prefs.eink) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) else null
+    // Try each candidate in turn; if every one fails, the placeholder note stays.
+    var index by remember(urls) { mutableIntStateOf(0) }
+    val url = urls.getOrNull(index)
     Box(
         modifier
             .aspectRatio(1f)
@@ -157,12 +161,14 @@ private fun Cover(url: String?, modifier: Modifier = Modifier, radius: Dp = Cove
             .then(if (Prefs.eink) Modifier.border(2.dp, MaterialTheme.colorScheme.onBackground, shape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
+        Text("♪", color = mutedColor(), style = MaterialTheme.typography.headlineMedium)
         if (url != null) {
             AsyncImage(
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 colorFilter = grey,
+                onError = { index++ },
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -171,17 +177,23 @@ private fun Cover(url: String?, modifier: Modifier = Modifier, radius: Dp = Cove
 
 @Composable
 private fun Logo(size: Dp) {
-    val eink = Prefs.eink
+    val cs = MaterialTheme.colorScheme
+    val mono = Prefs.eink
     Box(
         Modifier
             .size(size)
             .clip(RoundedCornerShape(size * 0.22f))
             .background(
-                if (eink) Brush.verticalGradient(listOf(Color.Black, Color.Black))
+                if (mono) Brush.verticalGradient(listOf(cs.onBackground, cs.onBackground))
                 else Brush.verticalGradient(listOf(AccentTop, AccentBottom)),
             ),
     ) {
-        Image(AppIcons.Logo, contentDescription = null, Modifier.fillMaxSize())
+        Image(
+            AppIcons.Logo,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            colorFilter = if (mono) ColorFilter.tint(cs.background) else null,
+        )
     }
 }
 
@@ -243,6 +255,10 @@ fun LoginScreen() {
 // Now playing
 // ---------------------------------------------------------------------------------------------
 
+private const val VIEW_HISTORY = 0
+private const val VIEW_NOW = 1
+private const val VIEW_QUEUE = 2
+
 @Composable
 fun NowPlayingScreen() {
     val track by Radio.track.collectAsState()
@@ -251,26 +267,10 @@ fun NowPlayingScreen() {
     val busy by Radio.busy.collectAsState()
     val loved by Radio.loved.collectAsState()
     val upNext by Radio.upNext.collectAsState()
-    var showQueue by rememberSaveable { mutableStateOf(false) }
+    val history by Radio.history.collectAsState()
+    var view by rememberSaveable { mutableIntStateOf(VIEW_NOW) }
 
     val t = track
-    if (t == null) {
-        Column(
-            Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                if (busy) "Loading…" else "Nothing playing",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            if (!busy) Text("Pick a station to start", color = mutedColor())
-        }
-        return
-    }
-    val isLoved = loved.containsKey(t.id)
-
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         station?.let {
             Text(
@@ -284,91 +284,139 @@ fun NowPlayingScreen() {
 
         Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
             when {
-                showQueue -> UpNextList(upNext)
-                Prefs.showArt -> Cover(t.artUrl, Modifier.fillMaxHeight())
+                view == VIEW_HISTORY -> TrackList(history, "Nothing played yet")
+                view == VIEW_QUEUE -> TrackList(upNext, "Nothing queued yet")
+                t == null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (busy) "Loading…" else "Nothing playing",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (!busy) Text("Pick a station to start", color = mutedColor())
+                }
+                Prefs.showArt -> Cover(t.artUrls, Modifier.fillMaxHeight())
             }
         }
 
-        Text(
-            t.title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            t.artist,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            t.album,
-            color = mutedColor(),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (t != null) {
+            if (view == VIEW_NOW) {
+                Text(
+                    t.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    t.artist,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    t.album,
+                    color = mutedColor(),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            ProgressRow()
+            Spacer(Modifier.height(12.dp))
 
-        Spacer(Modifier.height(12.dp))
-        ProgressRow()
-        Spacer(Modifier.height(12.dp))
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RoundButton(AppIcons.ThumbUp, "Ban song", 56.dp, 26.dp, rotate = 180f) { Radio.ban() }
-            RoundButton(
-                if (playing) AppIcons.Pause else AppIcons.Play,
-                if (playing) "Pause" else "Play",
-                76.dp, 38.dp,
-                filled = true,
-            ) { Radio.togglePlay() }
-            RoundButton(AppIcons.SkipNext, "Skip", 56.dp, 28.dp) { Radio.skip() }
-            RoundButton(
-                AppIcons.ThumbUp,
-                if (isLoved) "Remove love" else "Love song",
-                56.dp, 26.dp,
-                filled = Prefs.eink && isLoved,
-                tint = if (!Prefs.eink && isLoved) MaterialTheme.colorScheme.primary else null,
-            ) { Radio.toggleLove() }
+            val isLoved = loved.containsKey(t.id)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RoundButton(AppIcons.ThumbUp, "Ban song", 56.dp, 26.dp, rotate = 180f) { Radio.ban() }
+                RoundButton(
+                    if (playing) AppIcons.Pause else AppIcons.Play,
+                    if (playing) "Pause" else "Play",
+                    76.dp, 38.dp,
+                    filled = true,
+                ) { Radio.togglePlay() }
+                RoundButton(AppIcons.SkipNext, "Skip", 56.dp, 28.dp) { Radio.skip() }
+                RoundButton(
+                    AppIcons.ThumbUp,
+                    if (isLoved) "Remove love" else "Love song",
+                    56.dp, 26.dp,
+                    filled = Prefs.eink && isLoved,
+                    tint = if (!Prefs.eink && isLoved) MaterialTheme.colorScheme.primary else null,
+                ) { Radio.toggleLove() }
+            }
+            Spacer(Modifier.height(12.dp))
         }
 
-        Spacer(Modifier.height(12.dp))
-        Btn(
-            if (showQueue) "Now playing" else "Up next",
-            Modifier.fillMaxWidth(),
-            compact = true,
-        ) { showQueue = !showQueue }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Btn("History", Modifier.weight(1f), selected = view == VIEW_HISTORY, compact = true) { view = VIEW_HISTORY }
+            Btn("Now playing", Modifier.weight(1f), selected = view == VIEW_NOW, compact = true) { view = VIEW_NOW }
+            Btn("Up next", Modifier.weight(1f), selected = view == VIEW_QUEUE, compact = true) { view = VIEW_QUEUE }
+        }
     }
 }
 
 @Composable
-private fun UpNextList(tracks: List<Track>) {
+private fun TrackRow(t: Track) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (Prefs.showArt) {
+            Cover(t.artUrls, Modifier.size(48.dp), radius = 6.dp)
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                t.artist,
+                color = mutedColor(),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** A list of songs: paged with Prev/Next when "Paged lists" is on, otherwise scrollable. */
+@Composable
+private fun TrackList(tracks: List<Track>, emptyText: String) {
     if (tracks.isEmpty()) {
-        Text("Nothing queued yet", color = mutedColor())
+        Text(emptyText, color = mutedColor())
         return
     }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-        Text("Up next", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        tracks.take(5).forEach { t ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (Prefs.showArt) {
-                    Cover(t.artUrl, Modifier.size(48.dp), radius = 6.dp)
-                    Spacer(Modifier.width(12.dp))
-                }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (Prefs.pagedLists) {
+            val rowHeight = 64.dp
+            val navHeight = 56.dp
+            val perPage = ((maxHeight - navHeight) / rowHeight).toInt().coerceAtLeast(1)
+            val pages = ((tracks.size + perPage - 1) / perPage).coerceAtLeast(1)
+            var page by rememberSaveable { mutableIntStateOf(0) }
+            val now = page.coerceIn(0, pages - 1)
+            Column(Modifier.fillMaxSize()) {
                 Column(Modifier.weight(1f)) {
-                    Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(t.artist, color = mutedColor(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    tracks.drop(now * perPage).take(perPage).forEach { TrackRow(it) }
                 }
+                if (pages > 1) {
+                    Row(
+                        Modifier.fillMaxWidth().height(navHeight),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Btn("Prev", Modifier.weight(1f), compact = true) { page = (now - 1).coerceAtLeast(0) }
+                        Text("${now + 1} / $pages", Modifier.weight(1f), textAlign = TextAlign.Center)
+                        Btn("Next", Modifier.weight(1f), compact = true) { page = (now + 1).coerceAtMost(pages - 1) }
+                    }
+                }
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(tracks) { _, t -> TrackRow(t) }
             }
         }
     }
@@ -445,6 +493,7 @@ private fun StationAvatar(station: Station, size: Dp) {
         else -> null
     }
     val fg = if (eink) cs.onBackground else Color.White
+    var artFailed by remember(station.artUrl) { mutableStateOf(false) }
     Box(
         Modifier
             .size(size)
@@ -454,11 +503,12 @@ private fun StationAvatar(station: Station, size: Dp) {
         contentAlignment = Alignment.Center,
     ) {
         when {
-            station.artUrl != null && Prefs.showArt -> AsyncImage(
+            station.artUrl != null && Prefs.showArt && !artFailed -> AsyncImage(
                 model = station.artUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 colorFilter = if (eink) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) else null,
+                onError = { artFailed = true },
                 modifier = Modifier.fillMaxSize(),
             )
             icon != null -> Icon(icon, null, Modifier.size(size * 0.5f), tint = fg)
@@ -643,11 +693,11 @@ private fun PagedStations(
 fun SettingsScreen() {
     Column(Modifier.fillMaxSize()) {
         Section("Appearance")
-        SettingRow("E-ink mode", if (Prefs.eink) "On" else "Off") { Prefs.toggleEink() }
+        SettingRow("Theme", Prefs.THEME_LABELS[Prefs.theme]) { Prefs.cycleTheme() }
         SettingRow("Album art", if (Prefs.showArt) "Shown" else "Hidden") { Prefs.toggleArt() }
         SettingRow("Text size", "${(Prefs.textScale * 100).toInt()}%") { Prefs.cycleTextScale() }
 
-        Section("E-ink")
+        Section("Monochrome themes")
         SettingRow("Paged station lists", if (Prefs.pagedLists) "On" else "Off") { Prefs.togglePaged() }
         SettingRow("Progress updates", Prefs.PROGRESS_LABELS[Prefs.progressMode]) { Prefs.cycleProgress() }
 
@@ -707,7 +757,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (Prefs.showArt) {
-            Cover(t.artUrl, Modifier.size(44.dp), radius = 6.dp)
+            Cover(t.artUrls, Modifier.size(44.dp), radius = 6.dp)
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {

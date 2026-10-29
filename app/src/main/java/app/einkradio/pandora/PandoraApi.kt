@@ -28,7 +28,10 @@ data class Track(
     val title: String,
     val artist: String,
     val album: String,
+    /** The album art URL Pandora gave for this song, if any. */
     val artUrl: String?,
+    /** Art URLs to try in order: larger renditions first, then the originals, then the station's art. */
+    val artUrls: List<String>,
     val audioUrl: String,
 )
 
@@ -90,7 +93,8 @@ class PandoraApi {
     }
 
     fun getStations(): List<Station> = authed {
-        val stations = call("user.getStationList").getJSONArray("stations")
+        val stations = call("user.getStationList", JSONObject().put("includeStationArtUrl", true))
+            .getJSONArray("stations")
         (0 until stations.length()).map {
             val s = stations.getJSONObject(it)
             val name = s.getString("stationName")
@@ -115,15 +119,38 @@ class PandoraApi {
             val audio = QUALITY_ORDER.firstNotNullOfOrNull { q ->
                 urls.optJSONObject(q)?.optString("audioUrl")?.takeIf { it.isNotEmpty() }
             } ?: return@mapNotNull null
+            val art = artCandidates(o)
             Track(
                 id = o.getString("trackToken"),
                 title = o.optString("songName"),
                 artist = o.optString("artistName"),
                 album = o.optString("albumName"),
-                artUrl = o.optString("albumArtUrl").takeIf { it.isNotEmpty() },
+                artUrl = o.optString("albumArtUrl").takeIf { it.isNotEmpty() } ?: art.firstOrNull(),
+                artUrls = art,
                 audioUrl = audio,
             )
         }
+    }
+
+    /**
+     * Pandora is inconsistent about album art: some songs only carry a small `albumArtUrl`, some also
+     * list several sizes in `albumArt`, and some have neither. Collect everything so the UI can fall
+     * through the list when an image fails to load.
+     */
+    private fun artCandidates(item: JSONObject): List<String> {
+        val urls = mutableListOf<String>()
+        item.optJSONArray("albumArt")?.let { sizes ->
+            (0 until sizes.length())
+                .mapNotNull { sizes.optJSONObject(it) }
+                .sortedByDescending { it.optInt("size") }
+                .forEach { e -> e.optString("url").takeIf { it.isNotEmpty() }?.let(urls::add) }
+        }
+        item.optString("albumArtUrl").takeIf { it.isNotEmpty() }?.let { base ->
+            // The same image is served at several sizes; the large one may not exist, so keep the original.
+            urls.add(base.replace(ART_SIZE, "_500W_500H"))
+            urls.add(base)
+        }
+        return urls.distinct()
     }
 
     /** Returns the feedback id, which [removeRating] needs to undo the rating. */
@@ -215,5 +242,6 @@ class PandoraApi {
         const val DECRYPT_KEY = "R=U!LH\$O2B#"
 
         val QUALITY_ORDER = listOf("highQuality", "mediumQuality", "lowQuality")
+        val ART_SIZE = Regex("_\\d+W_\\d+H")
     }
 }

@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 /** Process-wide player and Pandora session; the UI and [PlaybackService] both use it. */
 object Radio {
     private const val REFILL_WHEN_REMAINING = 2
+    private const val HISTORY_LIMIT = 50
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val api = PandoraApi()
@@ -49,6 +50,9 @@ object Radio {
     val loved = MutableStateFlow<Map<String, String>>(emptyMap())
     val upNext = MutableStateFlow<List<Track>>(emptyList())
 
+    /** Songs already played this session, most recent first. */
+    val history = MutableStateFlow<List<Track>>(emptyList())
+
     fun init(context: Context) {
         player = ExoPlayer.Builder(context)
             .setAudioAttributes(
@@ -63,7 +67,12 @@ object Radio {
 
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                track.value = mediaItem?.let { tracks[it.mediaId] }
+                val previous = track.value
+                val next = mediaItem?.let { tracks[it.mediaId] }
+                if (previous != null && previous.id != next?.id) {
+                    history.value = (listOf(previous) + history.value).take(HISTORY_LIMIT)
+                }
+                track.value = next
                 publishQueue()
                 if (player.mediaItemCount - player.currentMediaItemIndex <= REFILL_WHEN_REMAINING) refill()
             }
@@ -121,6 +130,7 @@ object Radio {
         track.value = null
         loved.value = emptyMap()
         upNext.value = emptyList()
+        history.value = emptyList()
         loggedIn.value = false
     }
 
@@ -212,8 +222,13 @@ object Radio {
     }
 
     private fun enqueue(batch: List<Track>) {
-        batch.forEach { tracks[it.id] = it }
-        player.addMediaItems(batch.map(::mediaItem))
+        // A song with no art of its own falls back to the station's art.
+        val stationArt = station.value?.artUrl
+        val withArt = batch.map {
+            if (stationArt != null && stationArt !in it.artUrls) it.copy(artUrls = it.artUrls + stationArt) else it
+        }
+        withArt.forEach { tracks[it.id] = it }
+        player.addMediaItems(withArt.map(::mediaItem))
         publishQueue()
     }
 
@@ -231,7 +246,7 @@ object Radio {
                 .setTitle(t.title)
                 .setArtist(t.artist)
                 .setAlbumTitle(t.album)
-                .setArtworkUri(t.artUrl?.let(android.net.Uri::parse))
+                .setArtworkUri((t.artUrl ?: t.artUrls.lastOrNull())?.let(android.net.Uri::parse))
                 .build(),
         )
         .build()
