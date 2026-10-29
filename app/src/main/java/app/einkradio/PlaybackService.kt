@@ -16,6 +16,8 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping the app away: keep playing only if the user wants that and something is playing.
+        if (!Prefs.keepOnClose) Radio.stopPlayback()
         if (!Radio.player.playWhenReady) stopSelf()
     }
 

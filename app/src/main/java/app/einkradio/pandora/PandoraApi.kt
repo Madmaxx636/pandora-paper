@@ -33,6 +33,8 @@ data class Track(
     /** Art URLs to try in order: larger renditions first, then the originals, then the station's art. */
     val artUrls: List<String>,
     val audioUrl: String,
+    /** The station this song was queued from, so it can be rated after the station changes. */
+    val stationToken: String? = null,
 )
 
 /**
@@ -109,14 +111,20 @@ class PandoraApi {
         }
     }
 
-    fun getPlaylist(station: Station): List<Track> = authed {
+    /** [quality] is 0 (high), 1 (medium) or 2 (low); the other streams are fallbacks if that one is missing. */
+    fun getPlaylist(station: Station, quality: Int = 0): List<Track> = authed {
+        val order = when (quality) {
+            0 -> listOf("highQuality", "mediumQuality", "lowQuality")
+            1 -> listOf("mediumQuality", "lowQuality", "highQuality")
+            else -> listOf("lowQuality", "mediumQuality", "highQuality")
+        }
         val items = call("station.getPlaylist", JSONObject().put("stationToken", station.token))
             .getJSONArray("items")
         (0 until items.length()).mapNotNull { i ->
             val o = items.getJSONObject(i)
             // Only entries that carry an audio stream are playable tracks.
             val urls = o.optJSONObject("audioUrlMap") ?: return@mapNotNull null
-            val audio = QUALITY_ORDER.firstNotNullOfOrNull { q ->
+            val audio = order.firstNotNullOfOrNull { q ->
                 urls.optJSONObject(q)?.optString("audioUrl")?.takeIf { it.isNotEmpty() }
             } ?: return@mapNotNull null
             val art = artCandidates(o)
@@ -154,11 +162,11 @@ class PandoraApi {
     }
 
     /** Returns the feedback id, which [removeRating] needs to undo the rating. */
-    fun rate(station: Station, track: Track, positive: Boolean): String? = authed {
+    fun rate(stationToken: String, track: Track, positive: Boolean): String? = authed {
         call(
             "station.addFeedback",
             JSONObject()
-                .put("stationToken", station.token)
+                .put("stationToken", stationToken)
                 .put("trackToken", track.id)
                 .put("isPositive", positive),
         ).optString("feedbackId").takeIf { it.isNotEmpty() }
@@ -241,7 +249,6 @@ class PandoraApi {
         const val ENCRYPT_KEY = "6#26FRL\$ZWD"
         const val DECRYPT_KEY = "R=U!LH\$O2B#"
 
-        val QUALITY_ORDER = listOf("highQuality", "mediumQuality", "lowQuality")
         val ART_SIZE = Regex("_\\d+W_\\d+H")
     }
 }

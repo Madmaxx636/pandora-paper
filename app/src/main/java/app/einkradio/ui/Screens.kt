@@ -68,7 +68,12 @@ import app.einkradio.pandora.Station
 import app.einkradio.pandora.Track
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import java.util.Date
 import java.util.zip.CRC32
+import android.content.Intent
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
 
 private val CoverRadius = 12.dp
 
@@ -362,6 +367,8 @@ fun NowPlayingScreen() {
 
 @Composable
 private fun TrackRow(t: Track) {
+    val loved by Radio.loved.collectAsState()
+    val isLoved = loved.containsKey(t.id)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -380,6 +387,18 @@ private fun TrackRow(t: Track) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(8.dp))
+        RoundButton(
+            AppIcons.ThumbUp,
+            if (isLoved) "Remove love" else "Love song",
+            44.dp, 22.dp,
+            filled = Prefs.eink && isLoved,
+            tint = when {
+                Prefs.eink -> null
+                isLoved -> MaterialTheme.colorScheme.primary
+                else -> mutedColor()
+            },
+        ) { Radio.toggleLove(t) }
     }
 }
 
@@ -541,7 +560,13 @@ private fun PlayingBars() {
 }
 
 @Composable
-private fun StationRow(station: Station, selected: Boolean, onClick: () -> Unit) {
+private fun StationRow(
+    station: Station,
+    selected: Boolean,
+    pinned: Boolean,
+    onPin: () -> Unit,
+    onClick: () -> Unit,
+) {
     val subtitle = when {
         station.isQuickMix -> "A mix of your stations"
         station.isThumbprint -> "Built from your thumbs"
@@ -575,7 +600,22 @@ private fun StationRow(station: Station, selected: Boolean, onClick: () -> Unit)
                 )
             }
         }
-        if (selected) PlayingBars()
+        if (selected) {
+            PlayingBars()
+            Spacer(Modifier.width(8.dp))
+        }
+        RoundButton(
+            AppIcons.Pin,
+            if (pinned) "Unpin station" else "Pin station",
+            44.dp, 22.dp,
+            filled = Prefs.eink && pinned,
+            tint = when {
+                Prefs.eink -> null
+                pinned -> MaterialTheme.colorScheme.primary
+                else -> mutedColor()
+            },
+            onClick = onPin,
+        )
     }
 }
 
@@ -593,17 +633,23 @@ private fun matches(name: String, query: String): Boolean {
     return n.startsWith(q) || n.split(' ').any { it.startsWith(q) }
 }
 
+private sealed interface StationItem {
+    data class Header(val title: String) : StationItem
+    data class Entry(val station: Station) : StationItem
+}
+
 @Composable
 fun StationsScreen(onPicked: () -> Unit) {
     val all by Radio.stations.collectAsState()
     val current by Radio.station.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     val sortAz = Prefs.sortAz
+    val pinned = Prefs.pinned
 
-    // QuickMix and Thumbprint first, then Pandora's order or A-Z.
-    val shown = remember(all, query, sortAz) {
-        all.withIndex()
-            .filter { matches(it.value.name, query) }
+    // Pinned stations get their own section on top. Within a section QuickMix and Thumbprint come
+    // first, then Pandora's order or A-Z.
+    val items = remember(all, query, sortAz, pinned) {
+        fun ordered(list: List<IndexedValue<Station>>): List<Station> = list
             .sortedWith(
                 compareBy<IndexedValue<Station>>(
                     { !it.value.isSpecial },
@@ -612,6 +658,18 @@ fun StationsScreen(onPicked: () -> Unit) {
                 ),
             )
             .map { it.value }
+
+        val (pins, rest) = all.withIndex()
+            .filter { matches(it.value.name, query) }
+            .partition { it.value.token in pinned }
+        buildList {
+            if (pins.isNotEmpty()) {
+                add(StationItem.Header("Pinned"))
+                ordered(pins).forEach { add(StationItem.Entry(it)) }
+                if (rest.isNotEmpty()) add(StationItem.Header("All stations"))
+            }
+            ordered(rest).forEach { add(StationItem.Entry(it)) }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -629,7 +687,7 @@ fun StationsScreen(onPicked: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
 
-        if (shown.isEmpty()) {
+        if (items.isEmpty()) {
             Text(
                 if (all.isEmpty()) "No stations yet" else "No matches",
                 color = mutedColor(),
@@ -637,21 +695,55 @@ fun StationsScreen(onPicked: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
         } else if (Prefs.pagedLists) {
-            PagedStations(shown, current, onPicked, Modifier.weight(1f))
+            PagedStations(items, current, onPicked, Modifier.weight(1f))
         } else {
             LazyColumn(Modifier.weight(1f)) {
-                itemsIndexed(shown, key = { _, s -> s.token }) { i, s ->
-                    if (i > 0 && shown[i - 1].isSpecial && !s.isSpecial) Divider()
-                    StationRow(s, selected = s == current) { Radio.play(s); onPicked() }
-                }
+                itemsIndexed(
+                    items,
+                    key = { _, item ->
+                        when (item) {
+                            is StationItem.Header -> "header:${item.title}"
+                            is StationItem.Entry -> item.station.token
+                        }
+                    },
+                ) { i, item -> StationItemView(item, items.getOrNull(i - 1), current, onPicked) }
             }
         }
     }
 }
 
 @Composable
+private fun StationItemView(
+    item: StationItem,
+    previous: StationItem?,
+    current: Station?,
+    onPicked: () -> Unit,
+) {
+    when (item) {
+        is StationItem.Header -> Text(
+            item.title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp),
+        )
+        is StationItem.Entry -> {
+            val s = item.station
+            val before = (previous as? StationItem.Entry)?.station
+            if (before != null && before.isSpecial && !s.isSpecial) Divider()
+            StationRow(
+                s,
+                selected = s == current,
+                pinned = s.token in Prefs.pinned,
+                onPin = { Prefs.togglePin(s.token) },
+            ) { Radio.play(s); onPicked() }
+        }
+    }
+}
+
+@Composable
 private fun PagedStations(
-    shown: List<Station>,
+    items: List<StationItem>,
     current: Station?,
     onPicked: () -> Unit,
     modifier: Modifier = Modifier,
@@ -660,16 +752,15 @@ private fun PagedStations(
     BoxWithConstraints(modifier) {
         val navHeight = 64.dp
         val perPage = ((maxHeight - navHeight) / rowHeight).toInt().coerceAtLeast(1)
-        val pages = ((shown.size + perPage - 1) / perPage).coerceAtLeast(1)
+        val pages = ((items.size + perPage - 1) / perPage).coerceAtLeast(1)
         var page by rememberSaveable { mutableStateOf(0) }
         val now = page.coerceIn(0, pages - 1)
 
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f)) {
                 val start = now * perPage
-                shown.drop(start).take(perPage).forEachIndexed { i, s ->
-                    if ((start + i) > 0 && shown[start + i - 1].isSpecial && !s.isSpecial) Divider()
-                    StationRow(s, selected = s == current) { Radio.play(s); onPicked() }
+                items.drop(start).take(perPage).forEachIndexed { i, item ->
+                    StationItemView(item, items.getOrNull(start + i - 1), current, onPicked)
                 }
             }
             Row(
@@ -689,31 +780,118 @@ private fun PagedStations(
 // Settings
 // ---------------------------------------------------------------------------------------------
 
+private val SETTINGS_PAGES = listOf("Appearance", "Audio quality", "Power saving", "Background playback")
+private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
+
 @Composable
 fun SettingsScreen() {
+    var page by rememberSaveable { mutableIntStateOf(-1) }
     Column(Modifier.fillMaxSize()) {
-        Section("Appearance")
-        SettingRow("Theme", Prefs.THEME_LABELS[Prefs.theme]) { Prefs.cycleTheme() }
-        SettingRow("Album art", if (Prefs.showArt) "Shown" else "Hidden") { Prefs.toggleArt() }
-        SettingRow("Text size", "${(Prefs.textScale * 100).toInt()}%") { Prefs.cycleTextScale() }
-
-        Section("Monochrome themes")
-        SettingRow("Paged station lists", if (Prefs.pagedLists) "On" else "Off") { Prefs.togglePaged() }
-        SettingRow("Progress updates", Prefs.PROGRESS_LABELS[Prefs.progressMode]) { Prefs.cycleProgress() }
-
-        Spacer(Modifier.weight(1f))
-        Btn("Sign out", Modifier.fillMaxWidth()) { Radio.signOut() }
+        if (page < 0) {
+            SETTINGS_PAGES.forEachIndexed { i, title -> NavRow(title) { page = i } }
+            Spacer(Modifier.weight(1f))
+            Btn("Sign out", Modifier.fillMaxWidth()) { Radio.signOut() }
+        } else {
+            Btn("‹  ${SETTINGS_PAGES[page]}", Modifier.fillMaxWidth(), compact = true) { page = -1 }
+            Spacer(Modifier.height(8.dp))
+            when (page) {
+                0 -> AppearanceSettings()
+                1 -> QualitySettings()
+                2 -> PowerSettings()
+                else -> BackgroundSettings()
+            }
+        }
     }
 }
 
 @Composable
-private fun Section(title: String) {
+private fun AppearanceSettings() {
+    SettingRow("Theme", Prefs.THEME_LABELS[Prefs.theme]) { Prefs.cycleTheme() }
+    SettingRow("Album art", if (Prefs.showArt) "Shown" else "Hidden") { Prefs.toggleArt() }
+    SettingRow("Text size", "${(Prefs.textScale * 100).toInt()}%") { Prefs.cycleTextScale() }
+    SettingRow("Paged lists", if (Prefs.pagedLists) "On" else "Off") { Prefs.togglePaged() }
+    SettingRow("Progress updates", Prefs.PROGRESS_LABELS[Prefs.progressMode]) { Prefs.cycleProgress() }
+    Hint("Paged lists and slower progress updates mainly help e-ink screens. Progress updates apply to the White and Black themes.")
+}
+
+@Composable
+private fun QualitySettings() {
+    SettingRow("Stream quality", Prefs.QUALITY_LABELS[Prefs.quality]) { Prefs.cycleQuality() }
+    SettingRow("On mobile data", Prefs.CELLULAR_LABELS[Prefs.cellular]) { Prefs.cycleCellular() }
+    Hint(
+        "Changes apply to songs loaded from now on. If a quality isn't offered for your account, " +
+            "the next best one is used. Wi-Fi only stops stations from starting on a metered connection.",
+    )
+}
+
+@Composable
+private fun PowerSettings() {
+    val context = LocalContext.current
+    val minutes by Radio.sleepMinutes.collectAsState()
+    val endsAt by Radio.sleepEndsAt.collectAsState()
+    val sleepValue = endsAt?.let {
+        "$minutes min · ends " + android.text.format.DateFormat.getTimeFormat(context).format(Date(it))
+    } ?: "Off"
+
+    SettingRow("Sleep timer", sleepValue) {
+        val next = SLEEP_OPTIONS[(SLEEP_OPTIONS.indexOf(minutes) + 1) % SLEEP_OPTIONS.size]
+        Radio.setSleepTimer(next)
+    }
+    SettingRow("Pause at low battery", Prefs.BATTERY_LABELS[Prefs.batteryStop]) { Prefs.cycleBatteryStop() }
+    SettingRow("Stop when paused", Prefs.PAUSE_STOP_LABELS[Prefs.pauseStop]) { Prefs.cyclePauseStop() }
+    SettingRow("Large audio buffer", if (Prefs.largeBuffer) "On" else "Off") { Prefs.toggleLargeBuffer() }
+    Hint(
+        "A large buffer downloads more of each song at once so the radio can sleep longer. " +
+            "Restart the app after changing it. Stop when paused ends playback and clears the queue.",
+    )
+}
+
+@Composable
+private fun BackgroundSettings() {
+    val context = LocalContext.current
+    val unrestricted = context.getSystemService(PowerManager::class.java)
+        ?.isIgnoringBatteryOptimizations(context.packageName) == true
+
+    SettingRow("Keep playing when app is closed", if (Prefs.keepOnClose) "On" else "Off") { Prefs.toggleKeepOnClose() }
+    SettingRow("Pause when headphones unplug", if (Prefs.pauseOnUnplug) "On" else "Off") {
+        Prefs.togglePauseOnUnplug()
+        Radio.applyPlaybackPrefs()
+    }
+    SettingRow("Pause for other apps' audio", if (Prefs.yieldFocus) "On" else "Off") {
+        Prefs.toggleYieldFocus()
+        Radio.applyPlaybackPrefs()
+    }
+    SettingRow("Battery optimization", if (unrestricted) "Unrestricted" else "Optimized") {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    }
+    Hint(
+        "Turning off audio-focus pausing keeps the music playing over other apps instead of pausing or " +
+            "ducking. If Android stops playback with the screen off, set battery optimization to Unrestricted for this app.",
+    )
+}
+
+@Composable
+private fun NavRow(title: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .then(plainClick(onClick)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Text("›", style = MaterialTheme.typography.titleLarge, color = mutedColor())
+    }
+    Divider()
+}
+
+@Composable
+private fun Hint(text: String) {
     Text(
-        title,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = mutedColor(),
+        modifier = Modifier.padding(top = 12.dp),
     )
 }
 
