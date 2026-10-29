@@ -12,7 +12,16 @@ import javax.crypto.spec.SecretKeySpec
 
 class PandoraException(message: String, val code: Int = -1) : Exception(message)
 
-data class Station(val token: String, val name: String)
+data class Station(
+    val token: String,
+    val name: String,
+    val isQuickMix: Boolean = false,
+    val isThumbprint: Boolean = false,
+    val isShared: Boolean = false,
+    val artUrl: String? = null,
+) {
+    val isSpecial: Boolean get() = isQuickMix || isThumbprint
+}
 
 data class Track(
     val id: String,
@@ -84,7 +93,15 @@ class PandoraApi {
         val stations = call("user.getStationList").getJSONArray("stations")
         (0 until stations.length()).map {
             val s = stations.getJSONObject(it)
-            Station(s.getString("stationToken"), s.getString("stationName"))
+            val name = s.getString("stationName")
+            Station(
+                token = s.getString("stationToken"),
+                name = name,
+                isQuickMix = s.optBoolean("isQuickMix"),
+                isThumbprint = s.optBoolean("isThumbprint") || name == "Thumbprint Radio",
+                isShared = s.optBoolean("isShared"),
+                artUrl = s.optString("artUrl").takeIf { it.isNotEmpty() },
+            )
         }
     }
 
@@ -109,16 +126,19 @@ class PandoraApi {
         }
     }
 
-    fun rate(station: Station, track: Track, positive: Boolean) {
-        authed {
-            call(
-                "station.addFeedback",
-                JSONObject()
-                    .put("stationToken", station.token)
-                    .put("trackToken", track.id)
-                    .put("isPositive", positive),
-            )
-        }
+    /** Returns the feedback id, which [removeRating] needs to undo the rating. */
+    fun rate(station: Station, track: Track, positive: Boolean): String? = authed {
+        call(
+            "station.addFeedback",
+            JSONObject()
+                .put("stationToken", station.token)
+                .put("trackToken", track.id)
+                .put("isPositive", positive),
+        ).optString("feedbackId").takeIf { it.isNotEmpty() }
+    }
+
+    fun removeRating(feedbackId: String) {
+        authed { call("station.deleteFeedback", JSONObject().put("feedbackId", feedbackId)) }
     }
 
     /** Runs [block], logging in again once if the auth token has expired. */

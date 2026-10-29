@@ -14,6 +14,11 @@ import app.einkradio.Prefs
 private val Ink = Color.Black
 private val Paper = Color.White
 
+// Same blue as the desktop app's icon.
+private val Accent = Color(0xFF3A6BFF)
+private val AccentDark = Color(0xFF1C3AA8)
+private val AccentOnDark = Color(0xFF7C9BFF)
+
 /** Pure black on pure white: no greys, so nothing dithers on a monochrome panel. */
 private val EinkColors = lightColorScheme(
     primary = Ink, onPrimary = Paper,
@@ -25,12 +30,29 @@ private val EinkColors = lightColorScheme(
     outline = Ink, outlineVariant = Ink,
 )
 
+private val LightColors = lightColorScheme(
+    primary = Accent, onPrimary = Paper,
+    background = Paper, onBackground = Color(0xFF14161C),
+    surface = Paper, onSurface = Color(0xFF14161C),
+    outline = Color(0xFFB9BDC9),
+)
+
+private val DarkColors = darkColorScheme(
+    primary = AccentOnDark, onPrimary = Color(0xFF0B1330),
+    background = Color(0xFF101218), onBackground = Color(0xFFF1F2F6),
+    surface = Color(0xFF101218), onSurface = Color(0xFFF1F2F6),
+    outline = Color(0xFF4A4F5E),
+)
+
+val AccentTop = Accent
+val AccentBottom = AccentDark
+
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     val colors = when {
         Prefs.eink -> EinkColors
-        isSystemInDarkTheme() -> darkColorScheme()
-        else -> lightColorScheme()
+        isSystemInDarkTheme() -> DarkColors
+        else -> LightColors
     }
     val base = LocalDensity.current
     CompositionLocalProvider(
@@ -38,4 +60,11 @@ fun AppTheme(content: @Composable () -> Unit) {
     ) {
         MaterialTheme(colorScheme = colors, content = content)
     }
+}
+
+/** Secondary text colour; stays solid in e-ink mode so it doesn't render as dithered grey. */
+@Composable
+fun mutedColor(): Color {
+    val fg = MaterialTheme.colorScheme.onBackground
+    return if (Prefs.eink) fg else fg.copy(alpha = 0.65f)
 }

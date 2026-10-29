@@ -45,6 +45,10 @@ object Radio {
     val track = MutableStateFlow<Track?>(null)
     val isPlaying = MutableStateFlow(false)
 
+    /** Track id to feedback id for tracks loved this session (an empty id if Pandora sent none). */
+    val loved = MutableStateFlow<Map<String, String>>(emptyMap())
+    val upNext = MutableStateFlow<List<Track>>(emptyList())
+
     fun init(context: Context) {
         player = ExoPlayer.Builder(context)
             .setAudioAttributes(
@@ -60,6 +64,7 @@ object Radio {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 track.value = mediaItem?.let { tracks[it.mediaId] }
+                publishQueue()
                 if (player.mediaItemCount - player.currentMediaItemIndex <= REFILL_WHEN_REMAINING) refill()
             }
 
@@ -114,6 +119,8 @@ object Radio {
         stations.value = emptyList()
         station.value = null
         track.value = null
+        loved.value = emptyMap()
+        upNext.value = emptyList()
         loggedIn.value = false
     }
 
@@ -146,13 +153,34 @@ object Radio {
         if (player.hasNextMediaItem()) player.seekToNextMediaItem() else refill()
     }
 
-    fun rate(positive: Boolean) {
+    /** Thumbs-up, or undo it if this track is already loved. */
+    fun toggleLove() {
+        val s = station.value ?: return
+        val t = track.value ?: return
+        val existing = loved.value[t.id]
+        scope.launch {
+            try {
+                if (existing != null) {
+                    if (existing.isNotEmpty()) withContext(Dispatchers.IO) { api.removeRating(existing) }
+                    loved.value = loved.value - t.id
+                } else {
+                    val feedbackId = withContext(Dispatchers.IO) { api.rate(s, t, true) }
+                    loved.value = loved.value + (t.id to (feedbackId ?: ""))
+                }
+            } catch (e: Exception) {
+                error.value = e.message ?: "Could not save rating"
+            }
+        }
+    }
+
+    /** Thumbs-down; Pandora then moves on to the next song. */
+    fun ban() {
         val s = station.value ?: return
         val t = track.value ?: return
         scope.launch {
             try {
-                withContext(Dispatchers.IO) { api.rate(s, t, positive) }
-                if (!positive) skip()
+                withContext(Dispatchers.IO) { api.rate(s, t, false) }
+                skip()
             } catch (e: Exception) {
                 error.value = e.message ?: "Could not save rating"
             }
@@ -186,6 +214,13 @@ object Radio {
     private fun enqueue(batch: List<Track>) {
         batch.forEach { tracks[it.id] = it }
         player.addMediaItems(batch.map(::mediaItem))
+        publishQueue()
+    }
+
+    private fun publishQueue() {
+        val from = player.currentMediaItemIndex + 1
+        upNext.value = (from until player.mediaItemCount)
+            .mapNotNull { tracks[player.getMediaItemAt(it).mediaId] }
     }
 
     private fun mediaItem(t: Track): MediaItem = MediaItem.Builder()

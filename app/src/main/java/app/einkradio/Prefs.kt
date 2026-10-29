@@ -24,6 +24,8 @@ object Prefs {
         private set
     var showArt by mutableStateOf(true)
         private set
+    var sortAz by mutableStateOf(false)
+        private set
     var textScaleIndex by mutableIntStateOf(1)
         private set
     var progressMode by mutableIntStateOf(1)
@@ -42,6 +44,7 @@ object Prefs {
         eink = settings.getBoolean("eink", true)
         pagedLists = settings.getBoolean("paged", true)
         showArt = settings.getBoolean("art", true)
+        sortAz = settings.getBoolean("sort_az", false)
         textScaleIndex = settings.getInt("text_scale", 1).coerceIn(TEXT_SCALES.indices)
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
@@ -49,6 +52,8 @@ object Prefs {
     fun toggleEink() { eink = !eink; settings.edit().putBoolean("eink", eink).apply() }
     fun togglePaged() { pagedLists = !pagedLists; settings.edit().putBoolean("paged", pagedLists).apply() }
     fun toggleArt() { showArt = !showArt; settings.edit().putBoolean("art", showArt).apply() }
+
+    fun toggleSort() { sortAz = !sortAz; settings.edit().putBoolean("sort_az", sortAz).apply() }
 
     fun cycleTextScale() {
         textScaleIndex = (textScaleIndex + 1) % TEXT_SCALES.size
