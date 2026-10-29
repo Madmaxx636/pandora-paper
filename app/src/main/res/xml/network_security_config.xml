@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- Some audio URLs are served over plain HTTP from Pandora's own hosts. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">pandora.com</domain>
+    </domain-config>
+</network-security-config>
