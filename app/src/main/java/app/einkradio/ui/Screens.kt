@@ -368,7 +368,9 @@ fun NowPlayingScreen() {
 @Composable
 private fun TrackRow(t: Track) {
     val loved by Radio.loved.collectAsState()
+    val banned by Radio.banned.collectAsState()
     val isLoved = loved.containsKey(t.id)
+    val isBanned = banned.containsKey(t.id)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -388,6 +390,19 @@ private fun TrackRow(t: Track) {
             )
         }
         Spacer(Modifier.width(8.dp))
+        RoundButton(
+            AppIcons.ThumbUp,
+            if (isBanned) "Remove dislike" else "Dislike song",
+            44.dp, 22.dp,
+            rotate = 180f,
+            filled = Prefs.eink && isBanned,
+            tint = when {
+                Prefs.eink -> null
+                isBanned -> MaterialTheme.colorScheme.primary
+                else -> mutedColor()
+            },
+        ) { Radio.ban(t) }
+        Spacer(Modifier.width(4.dp))
         RoundButton(
             AppIcons.ThumbUp,
             if (isLoved) "Remove love" else "Love song",

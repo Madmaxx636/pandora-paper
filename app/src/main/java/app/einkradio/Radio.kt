@@ -69,6 +69,9 @@ object Radio {
     val loved = MutableStateFlow<Map<String, String>>(emptyMap())
     val upNext = MutableStateFlow<List<Track>>(emptyList())
 
+    /** Same as [loved], for songs given a thumbs-down this session. */
+    val banned = MutableStateFlow<Map<String, String>>(emptyMap())
+
     /** Songs already played this session, most recent first. */
     val history = MutableStateFlow<List<Track>>(emptyList())
 
@@ -162,6 +165,7 @@ object Radio {
         station.value = null
         track.value = null
         loved.value = emptyMap()
+        banned.value = emptyMap()
         upNext.value = emptyList()
         history.value = emptyList()
         loggedIn.value = false
@@ -293,6 +297,7 @@ object Radio {
                 } else {
                     val feedbackId = withContext(Dispatchers.IO) { api.rate(stationToken, t, true) }
                     loved.value = loved.value + (t.id to (feedbackId ?: ""))
+                    banned.value = banned.value - t.id // a thumbs-up replaces a thumbs-down
                 }
             } catch (e: Exception) {
                 error.value = e.message ?: "Could not save rating"
@@ -300,18 +305,37 @@ object Radio {
         }
     }
 
-    /** Thumbs-down; Pandora then moves on to the next song. */
-    fun ban() {
-        val s = station.value ?: return
-        val t = track.value ?: return
+    /**
+     * Thumbs-down, or undo it if the song is already disliked. Disliking the playing song skips it,
+     * disliking a queued song drops it from the queue, and a played song just keeps the rating.
+     */
+    fun ban(target: Track? = track.value) {
+        val t = target ?: return
+        val stationToken = t.stationToken ?: station.value?.token ?: return
+        val existing = banned.value[t.id]
         scope.launch {
             try {
-                withContext(Dispatchers.IO) { api.rate(s.token, t, false) }
-                skip()
+                if (existing != null) {
+                    if (existing.isNotEmpty()) withContext(Dispatchers.IO) { api.removeRating(existing) }
+                    banned.value = banned.value - t.id
+                    return@launch
+                }
+                val feedbackId = withContext(Dispatchers.IO) { api.rate(stationToken, t, false) }
+                banned.value = banned.value + (t.id to (feedbackId ?: ""))
+                loved.value = loved.value - t.id // a thumbs-down replaces a thumbs-up
+                if (t.id == track.value?.id) skip() else removeFromQueue(t.id)
             } catch (e: Exception) {
                 error.value = e.message ?: "Could not save rating"
             }
         }
+    }
+
+    private fun removeFromQueue(id: String) {
+        for (i in player.mediaItemCount - 1 downTo player.currentMediaItemIndex + 1) {
+            if (player.getMediaItemAt(i).mediaId == id) player.removeMediaItem(i)
+        }
+        publishQueue()
+        if (player.mediaItemCount - player.currentMediaItemIndex <= REFILL_WHEN_REMAINING) refill()
     }
 
     private fun refill() {
