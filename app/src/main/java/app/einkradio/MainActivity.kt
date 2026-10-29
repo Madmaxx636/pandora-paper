@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        // Only on a fresh launch, not when the screen is recreated (e.g. rotation).
+        if (savedInstanceState == null) Radio.resumeLastStation()
         setContent { AppTheme { Root() } }
     }
 }
@@ -53,7 +55,10 @@ private val TABS = listOf("Stations", "Playing", "Settings")
 @Composable
 private fun Root() {
     val loggedIn by Radio.loggedIn.collectAsState()
-    var tab by rememberSaveable { mutableIntStateOf(TAB_STATIONS) }
+    // Open on Playing when a station is about to be resumed.
+    var tab by rememberSaveable {
+        mutableIntStateOf(if (Prefs.resumeLast && Prefs.lastStation != null) TAB_PLAYING else TAB_STATIONS)
+    }
 
     Column(
         Modifier

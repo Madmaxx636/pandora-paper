@@ -70,7 +70,10 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.util.Date
 import java.util.zip.CRC32
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.os.Process
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
@@ -800,11 +803,14 @@ private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
 
 @Composable
 fun SettingsScreen() {
+    val context = LocalContext.current
     var page by rememberSaveable { mutableIntStateOf(-1) }
     Column(Modifier.fillMaxSize()) {
         if (page < 0) {
             SETTINGS_PAGES.forEachIndexed { i, title -> NavRow(title) { page = i } }
             Spacer(Modifier.weight(1f))
+            Btn("Quit app", Modifier.fillMaxWidth()) { quitApp(context) }
+            Spacer(Modifier.height(8.dp))
             Btn("Sign out", Modifier.fillMaxWidth()) { Radio.signOut() }
         } else {
             Btn("‹  ${SETTINGS_PAGES[page]}", Modifier.fillMaxWidth(), compact = true) { page = -1 }
@@ -855,10 +861,14 @@ private fun PowerSettings() {
     SettingRow("Pause at low battery", Prefs.BATTERY_LABELS[Prefs.batteryStop]) { Prefs.cycleBatteryStop() }
     SettingRow("Stop when paused", Prefs.PAUSE_STOP_LABELS[Prefs.pauseStop]) { Prefs.cyclePauseStop() }
     SettingRow("Large audio buffer", if (Prefs.largeBuffer) "On" else "Off") { Prefs.toggleLargeBuffer() }
+    SettingRow("Swipe away in recents", if (Prefs.keepOnClose) "Keeps playing" else "Quits app") { Prefs.toggleKeepOnClose() }
     Hint(
         "A large buffer downloads more of each song at once so the radio can sleep longer. " +
-            "Restart the app after changing it. Stop when paused ends playback and clears the queue.",
+            "Restart the app after changing it. Stop when paused ends playback and clears the queue. " +
+            "Swiping the app away either keeps it running in the background or quits it completely.",
     )
+    Spacer(Modifier.height(16.dp))
+    Btn("Quit app", Modifier.fillMaxWidth()) { quitApp(context) }
 }
 
 @Composable
@@ -867,7 +877,7 @@ private fun BackgroundSettings() {
     val unrestricted = context.getSystemService(PowerManager::class.java)
         ?.isIgnoringBatteryOptimizations(context.packageName) == true
 
-    SettingRow("Keep playing when app is closed", if (Prefs.keepOnClose) "On" else "Off") { Prefs.toggleKeepOnClose() }
+    SettingRow("Resume last station on open", if (Prefs.resumeLast) "On" else "Off") { Prefs.toggleResumeLast() }
     SettingRow("Pause when headphones unplug", if (Prefs.pauseOnUnplug) "On" else "Off") {
         Prefs.togglePauseOnUnplug()
         Radio.applyPlaybackPrefs()
@@ -883,6 +893,13 @@ private fun BackgroundSettings() {
         "Turning off audio-focus pausing keeps the music playing over other apps instead of pausing or " +
             "ducking. If Android stops playback with the screen off, set battery optimization to Unrestricted for this app.",
     )
+}
+
+/** Stops playback, shuts the service down, closes the screen and ends the process. */
+private fun quitApp(context: Context) {
+    Radio.quit()
+    (context as? Activity)?.finishAndRemoveTask()
+    Process.killProcess(Process.myPid())
 }
 
 @Composable

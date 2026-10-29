@@ -67,6 +67,11 @@ object Prefs {
         private set
     var yieldFocus by mutableStateOf(true)
         private set
+    var resumeLast by mutableStateOf(true)
+        private set
+
+    /** Token of the station that was playing last, so it can be resumed on the next launch. */
+    val lastStation: String? get() = settings.getString("last_station", null)
     var showArt by mutableStateOf(true)
         private set
     var sortAz by mutableStateOf(false)
@@ -105,6 +110,7 @@ object Prefs {
         keepOnClose = settings.getBoolean("keep_on_close", true)
         pauseOnUnplug = settings.getBoolean("pause_on_unplug", true)
         yieldFocus = settings.getBoolean("yield_focus", true)
+        resumeLast = settings.getBoolean("resume_last", true)
         textScaleIndex = settings.getInt("text_scale", 1).coerceIn(TEXT_SCALES.indices)
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
@@ -142,6 +148,12 @@ object Prefs {
     fun toggleKeepOnClose() { keepOnClose = !keepOnClose; settings.edit().putBoolean("keep_on_close", keepOnClose).apply() }
     fun togglePauseOnUnplug() { pauseOnUnplug = !pauseOnUnplug; settings.edit().putBoolean("pause_on_unplug", pauseOnUnplug).apply() }
     fun toggleYieldFocus() { yieldFocus = !yieldFocus; settings.edit().putBoolean("yield_focus", yieldFocus).apply() }
+
+    fun toggleResumeLast() { resumeLast = !resumeLast; settings.edit().putBoolean("resume_last", resumeLast).apply() }
+
+    fun saveLastStation(token: String?) {
+        settings.edit().apply { if (token == null) remove("last_station") else putString("last_station", token) }.apply()
+    }
 
     fun togglePin(token: String) {
         pinned = if (token in pinned) pinned - token else pinned + token

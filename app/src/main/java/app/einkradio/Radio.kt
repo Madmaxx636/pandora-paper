@@ -40,6 +40,7 @@ object Radio {
     private val api = PandoraApi()
     private val tracks = HashMap<String, Track>()
     private var refilling = false
+    private var resumePending = false
 
     private lateinit var appContext: Context
     private var batteryJob: Job? = null
@@ -132,6 +133,20 @@ object Radio {
         controller = MediaController.Builder(context, token).buildAsync()
     }
 
+    /**
+     * Starts the station that was playing when the app was last used. Called when the screen is first
+     * opened; if the saved login hasn't finished yet, it starts as soon as it has.
+     */
+    fun resumeLastStation() {
+        if (!Prefs.resumeLast || station.value != null) return
+        if (loggedIn.value) startLastStation() else resumePending = true
+    }
+
+    private fun startLastStation() {
+        val token = Prefs.lastStation ?: return
+        stations.value.firstOrNull { it.token == token }?.let(::play)
+    }
+
     fun autoLogin() {
         Prefs.savedLogin()?.let { (user, pass) -> signIn(user, pass) }
     }
@@ -148,7 +163,12 @@ object Radio {
                 Prefs.saveLogin(user, pass)
                 stations.value = list
                 loggedIn.value = true
+                if (resumePending) {
+                    resumePending = false
+                    startLastStation()
+                }
             } catch (e: Exception) {
+                resumePending = false
                 error.value = e.message ?: "Sign-in failed"
             } finally {
                 busy.value = false
@@ -161,6 +181,8 @@ object Radio {
         player.clearMediaItems()
         tracks.clear()
         Prefs.clearLogin()
+        Prefs.saveLastStation(null)
+        resumePending = false
         stations.value = emptyList()
         station.value = null
         track.value = null
@@ -183,6 +205,7 @@ object Radio {
                 val quality = audioQuality()
                 val batch = withContext(Dispatchers.IO) { api.getPlaylist(s, quality) }
                 station.value = s
+                Prefs.saveLastStation(s.token)
                 player.clearMediaItems()
                 tracks.clear()
                 enqueue(batch)
@@ -200,6 +223,21 @@ object Radio {
     fun applyPlaybackPrefs() {
         player.setAudioAttributes(audioAttributes, Prefs.yieldFocus)
         player.setHandleAudioBecomingNoisy(Prefs.pauseOnUnplug)
+    }
+
+    /**
+     * Shuts everything down: timers, the service binding, the player and the service itself. The
+     * caller then closes the activity and ends the process; the player can't be used after this.
+     */
+    fun quit() {
+        sleepJob?.cancel()
+        batteryJob?.cancel()
+        pauseStopJob?.cancel()
+        // Our own controller keeps the service bound, so it has to go before the service can stop.
+        controller?.let { MediaController.releaseFuture(it) }
+        controller = null
+        player.release()
+        appContext.stopService(Intent(appContext, PlaybackService::class.java))
     }
 
     /** Stops playback and empties the queue; the station and history stay. */
