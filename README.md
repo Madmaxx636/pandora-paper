@@ -22,6 +22,14 @@ reverse-engineered and can break at any time. The client does not block ads or e
 limits; it plays what the service returns and shows the service's errors. It is meant for personal,
 sideloaded use and is not affiliated with Pandora.
 
+## Android Auto
+
+The app is a media app for Android Auto: your stations (pinned first) appear in the car's media list, and
+Like and Dislike buttons sit on the now-playing screen. Because the app is installed from an APK rather than
+the Play Store, Android Auto hides it until you turn on developer mode: open Android Auto settings, tap the
+version number about ten times, open the developer settings from the menu, and enable **Unknown sources**.
+This has not yet been tried in a car or the Desktop Head Unit.
+
 ## Building
 
 Needs JDK 17 and the Android SDK (platform 35). Open the folder in Android Studio, or install the SDK and
