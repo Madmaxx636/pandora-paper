@@ -337,14 +337,14 @@ class PlaybackService : MediaLibraryService() {
             .take(MAX_STATIONS)
     }
 
-    /** A top tab in the car: "For You" (cards for recent and pinned stations) or "My Collection" (the full list). */
+    /** A top tab in the car: "For You" (cards for recent and pinned stations) or "My Stations" (the full list). */
     private fun tabItem(id: String): MediaItem {
         val forYou = id == TAB_FOR_YOU
         return MediaItem.Builder()
             .setMediaId(id)
             .setMediaMetadata(
                 MediaMetadata.Builder()
-                    .setTitle(if (forYou) "For You" else "My Collection")
+                    .setTitle(if (forYou) "For You" else "My Stations")
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
