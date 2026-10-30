@@ -69,6 +69,11 @@ object Prefs {
         private set
     var resumeLast by mutableStateOf(true)
         private set
+    var autoUpdate by mutableStateOf(true)
+        private set
+
+    /** When the app last asked GitHub for a newer release (ms since epoch). */
+    val lastUpdateCheck: Long get() = settings.getLong("last_update_check", 0L)
 
     /** Token of the station that was playing last, so it can be resumed on the next launch. */
     val lastStation: String? get() = settings.getString("last_station", null)
@@ -111,6 +116,7 @@ object Prefs {
         pauseOnUnplug = settings.getBoolean("pause_on_unplug", true)
         yieldFocus = settings.getBoolean("yield_focus", true)
         resumeLast = settings.getBoolean("resume_last", true)
+        autoUpdate = settings.getBoolean("auto_update", true)
         textScaleIndex = settings.getInt("text_scale", 1).coerceIn(TEXT_SCALES.indices)
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
@@ -150,6 +156,12 @@ object Prefs {
     fun toggleYieldFocus() { yieldFocus = !yieldFocus; settings.edit().putBoolean("yield_focus", yieldFocus).apply() }
 
     fun toggleResumeLast() { resumeLast = !resumeLast; settings.edit().putBoolean("resume_last", resumeLast).apply() }
+
+    fun toggleAutoUpdate() { autoUpdate = !autoUpdate; settings.edit().putBoolean("auto_update", autoUpdate).apply() }
+
+    fun saveUpdateCheck(time: Long) {
+        settings.edit().putLong("last_update_check", time).apply()
+    }
 
     fun saveLastStation(token: String?) {
         settings.edit().apply { if (token == null) remove("last_station") else putString("last_station", token) }.apply()

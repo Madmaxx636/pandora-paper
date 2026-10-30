@@ -102,15 +102,20 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(LibraryResult.ofItem(rootItem(), params))
+            // When the car asks for the "recent" root, it is asking what to play right now. Answering
+            // with the last station makes it open straight into the player instead of the station list.
+            Futures.immediateFuture(
+                if (params?.isRecent == true) LibraryResult.ofItem(rootItem(RECENT_ID), params)
+                else LibraryResult.ofItem(rootItem(ROOT_ID), rootParams()),
+            )
 
         override fun onGetItem(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val item = if (mediaId == ROOT_ID) {
-                rootItem()
+            val item = if (mediaId == ROOT_ID || mediaId == RECENT_ID) {
+                rootItem(mediaId)
             } else {
                 Radio.stations.value.firstOrNull { STATION_PREFIX + it.token == mediaId }?.let(::stationItem)
             }
@@ -133,7 +138,11 @@ class PlaybackService : MediaLibraryService() {
                 // If the app was just started, give the saved login a moment to finish so the car
                 // doesn't see an empty list.
                 withTimeoutOrNull(LOGIN_WAIT_MS) { Radio.restoring.first { !it } }
-                val items = if (parentId == ROOT_ID) stationItems() else emptyList()
+                val items = when (parentId) {
+                    ROOT_ID -> stationItems()
+                    RECENT_ID -> recentItems()
+                    else -> emptyList()
+                }
                 result.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
             }
             return result
@@ -185,8 +194,15 @@ class PlaybackService : MediaLibraryService() {
             .build(),
     )
 
-    private fun rootItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(ROOT_ID)
+    /** The station that is playing, or was last played: the single item the car should start. */
+    private fun recentItems(): List<MediaItem> {
+        val token = Radio.station.value?.token ?: Prefs.lastStation ?: return emptyList()
+        return Radio.stations.value.firstOrNull { it.token == token }?.let { listOf(stationItem(it)) }
+            ?: emptyList()
+    }
+
+    private fun rootItem(id: String): MediaItem = MediaItem.Builder()
+        .setMediaId(id)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(getString(R.string.app_name))
@@ -197,32 +213,66 @@ class PlaybackService : MediaLibraryService() {
         )
         .build()
 
-    private fun stationItem(s: Station): MediaItem = MediaItem.Builder()
+    /** Ask the car to show a plain list, which reads best for station names. */
+    private fun rootParams(): LibraryParams = LibraryParams.Builder()
+        .setExtras(
+            Bundle().apply {
+                putBoolean(STYLE_SUPPORTED, true)
+                putInt(STYLE_PLAYABLE, STYLE_LIST)
+                putInt(STYLE_BROWSABLE, STYLE_LIST)
+            },
+        )
+        .build()
+
+    /** [group] becomes a heading above the first station of that group in the car's list. */
+    private fun stationItem(s: Station, group: String? = null): MediaItem = MediaItem.Builder()
         .setMediaId(STATION_PREFIX + s.token)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(s.name)
+                .setSubtitle(
+                    when {
+                        s.isQuickMix -> "A mix of your stations"
+                        s.isThumbprint -> "Built from your thumbs"
+                        s.isShared -> "Shared station"
+                        else -> null
+                    },
+                )
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
                 .setArtworkUri(s.artUrl?.let(Uri::parse))
+                .setExtras(Bundle().apply { if (group != null) putString(STYLE_GROUP_TITLE, group) })
                 .build(),
         )
         .build()
 
-    /** Pinned stations first, then QuickMix and Thumbprint, then Pandora's order; cars cap list length. */
+    /**
+     * One plain list: pinned stations under a "Pinned" heading (only when there are any), then the rest
+     * under "Stations", with QuickMix and Thumbprint first. Cars cap list length.
+     */
     private fun stationItems(): List<MediaItem> {
         val pinned = Prefs.pinned
-        return Radio.stations.value
-            .sortedWith(compareBy({ it.token !in pinned }, { !it.isSpecial }))
+        val ordered = Radio.stations.value.sortedWith(compareBy({ !it.isSpecial }))
+        val (pins, rest) = ordered.partition { it.token in pinned }
+        val grouped = pins.isNotEmpty()
+        return (pins.map { stationItem(it, "Pinned") } +
+            rest.map { stationItem(it, if (grouped) "Stations" else null) })
             .take(MAX_STATIONS)
-            .map(::stationItem)
     }
 
     private companion object {
         const val ROOT_ID = "root"
+        const val RECENT_ID = "recent"
         const val STATION_PREFIX = "station:"
         const val MAX_STATIONS = 100
+
+        // Android Auto's content-style hints for browse lists (values: 1 = list, 2 = grid).
+        const val STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
+        const val STYLE_PLAYABLE = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT"
+        const val STYLE_BROWSABLE = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
+        const val STYLE_GROUP_TITLE = "android.media.browse.CONTENT_STYLE_GROUP_TITLE_HINT"
+        const val STYLE_LIST = 1
         const val LOGIN_WAIT_MS = 20_000L
         const val ACTION_LIKE = "app.einkradio.LIKE"
         const val ACTION_DISLIKE = "app.einkradio.DISLIKE"

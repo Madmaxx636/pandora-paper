@@ -304,6 +304,9 @@ object Radio {
         return caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) != true
     }
 
+    /** True on a connection Android treats as metered (usually mobile data). */
+    fun isMetered(): Boolean = onMeteredNetwork()
+
     private fun blockedByNetwork(): Boolean =
         Prefs.cellular == Prefs.CELLULAR_WIFI_ONLY && onMeteredNetwork()
 

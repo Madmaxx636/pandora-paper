@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets the in-app updater hand a downloaded update to Android's installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".App"
@@ -24,8 +26,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            </intent-filter>        </activity>
 
         <service
             android:name=".PlaybackService"
@@ -39,9 +40,24 @@
             </intent-filter>
         </service>
 
+        <!-- Shares downloaded updates with Android's installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Declares this as a media app for Android Auto. -->
         <meta-data
             android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <!-- The same declaration for cars that run Android Automotive OS themselves. -->
+        <meta-data
+            android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />
     </application>
 </manifest>

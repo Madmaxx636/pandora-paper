@@ -34,6 +34,7 @@ import app.einkradio.ui.NavBar
 import app.einkradio.ui.NowPlayingScreen
 import app.einkradio.ui.SettingsScreen
 import app.einkradio.ui.Splash
+import app.einkradio.ui.UpdateBanner
 import app.einkradio.ui.StationsScreen
 import app.einkradio.ui.mutedColor
 
@@ -45,7 +46,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         // Only on a fresh launch, not when the screen is recreated (e.g. rotation).
-        if (savedInstanceState == null) Radio.resumeLastStation()
+        if (savedInstanceState == null) {
+            Radio.resumeLastStation()
+            Updater.check(applicationContext, auto = true)
+        }
         setContent { AppTheme { Root() } }
     }
 }
@@ -79,6 +83,7 @@ private fun Root() {
             return@Column
         }
 
+        UpdateBanner()
         ErrorBanner()
 
         if (!loggedIn) {

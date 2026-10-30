@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.C
 import app.einkradio.Prefs
 import app.einkradio.Radio
+import app.einkradio.Updater
 import app.einkradio.pandora.Station
 import app.einkradio.pandora.Track
 import coil.compose.AsyncImage
@@ -853,7 +854,7 @@ private fun PagedStations(
 // ---------------------------------------------------------------------------------------------
 
 private val SETTINGS_PAGES = listOf(
-    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs",
+    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs", "Updates",
 )
 private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
 
@@ -876,6 +877,7 @@ fun SettingsScreen() {
                 1 -> QualitySettings()
                 2 -> PowerSettings()
                 3 -> BackgroundSettings()
+                5 -> UpdatesSettings()
                 else -> Box(Modifier.weight(1f)) { LibraryScreen() }
             }
         }
@@ -957,6 +959,80 @@ private fun quitApp(context: Context) {
     Radio.quit()
     (context as? Activity)?.finishAndRemoveTask()
     Process.killProcess(Process.myPid())
+}
+
+@Composable
+private fun UpdatesSettings() {
+    val context = LocalContext.current
+    val state by Updater.state.collectAsState()
+    val installed = remember { Updater.installedVersion(context) }
+
+    SettingRow("Installed version", installed) {}
+    SettingRow("Check automatically", if (Prefs.autoUpdate) "On" else "Off") { Prefs.toggleAutoUpdate() }
+    Spacer(Modifier.height(12.dp))
+
+    when (val s = state) {
+        is Updater.State.Available -> {
+            val mb = if (s.release.size > 0) " (%.1f MB)".format(s.release.size / 1_000_000.0) else ""
+            Text("Version ${s.release.version} is available$mb", fontWeight = FontWeight.Bold)
+            if (s.release.notes.isNotEmpty()) {
+                Text(
+                    s.release.notes.take(400),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = mutedColor(),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Btn("Download and install", Modifier.fillMaxWidth(), selected = true) { Updater.install(context) }
+        }
+        Updater.State.Checking -> Text("Checking for updates…", color = mutedColor())
+        is Updater.State.Downloading -> Text("Downloading… ${s.percent}%", color = mutedColor())
+        Updater.State.UpToDate -> Text("You're on the latest version.", color = mutedColor())
+        is Updater.State.Failed -> Text(s.message, color = mutedColor())
+        Updater.State.Idle -> Unit
+    }
+    Spacer(Modifier.height(12.dp))
+    Btn("Check now", Modifier.fillMaxWidth()) { Updater.check(context) }
+    Hint(
+        "Updates come from this app's releases on GitHub. Automatic checks run at most once a day, only on " +
+            "an unmetered connection, and never install anything by themselves: Android asks you to confirm " +
+            "each install. An update must be signed with the same key as the installed app.",
+    )
+}
+
+/** Shown at the top of the app when a newer release exists, and while it downloads. */
+@Composable
+fun UpdateBanner() {
+    val context = LocalContext.current
+    val state by Updater.state.collectAsState()
+    val dismissed by Updater.dismissed.collectAsState()
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+
+    val release = (state as? Updater.State.Available)?.release
+    val downloading = state as? Updater.State.Downloading
+    if (release == null && downloading == null) return
+    if (release != null && release.version == dismissed) return
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+            .background(if (Prefs.eink) cs.background else cs.primary.copy(alpha = 0.12f), shape)
+            .then(if (Prefs.eink) Modifier.border(2.dp, cs.onBackground, shape) else Modifier)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (downloading != null) {
+            Text("Downloading update… ${downloading.percent}%", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+        } else if (release != null) {
+            Text("Update ${release.version} is available", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+            Btn("Install", compact = true) { Updater.install(context) }
+            Spacer(Modifier.width(8.dp))
+            Btn("Later", compact = true) { Updater.dismiss(release.version) }
+        }
+    }
 }
 
 @Composable
