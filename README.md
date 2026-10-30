@@ -28,4 +28,4 @@ Needs JDK 17 and the Android SDK (platform 35). Open the folder in Android Studi
 Gradle 8.9 and run `gradle :app:assembleDebug`. The APK is written to
 `app/build/outputs/apk/debug/app-debug.apk`.
 
-The build has been verified; the app has not been tested on a physical device.
+Built and tested during development on a real device with a live Pandora account.
