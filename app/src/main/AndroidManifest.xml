@@ -51,6 +51,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Square copies of station art for the car; serves only images the app registered itself. -->
+        <provider
+            android:name=".ArtProvider"
+            android:authorities="${applicationId}.art"
+            android:exported="true" />
+
         <!-- Declares this as a media app for Android Auto. -->
         <meta-data
             android:name="com.google.android.gms.car.application"

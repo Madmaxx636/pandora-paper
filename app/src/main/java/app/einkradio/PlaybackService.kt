@@ -26,7 +26,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,6 +52,13 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             combine(Radio.track, Radio.loved) { track, loved -> track != null && track.ratingKey in loved }
                 .collect { liked -> librarySession.setCustomLayout(buttons(liked)) }
+        }
+
+        // Re-send the tabs when the start tab is changed in Settings, so a connected car reorders them.
+        scope.launch {
+            snapshotFlow { Prefs.carStartTab }
+                .drop(1)
+                .collect { librarySession.notifyChildrenChanged(ROOT_ID, 2, null) }
         }
     }
 
@@ -204,7 +213,10 @@ class PlaybackService : MediaLibraryService() {
                 // doesn't see an empty list.
                 withTimeoutOrNull(LOGIN_WAIT_MS) { Radio.restoring.first { !it } }
                 val items = when (parentId) {
-                    ROOT_ID -> listOf(tabItem(TAB_FOR_YOU), tabItem(TAB_COLLECTION))
+                    // The car opens on the first tab, so the one chosen in Settings goes first.
+                    ROOT_ID -> listOf(TAB_FOR_YOU, TAB_COLLECTION)
+                        .let { if (Prefs.carStartTab == 0) it else it.reversed() }
+                        .map(::tabItem)
                     TAB_FOR_YOU -> forYouItems()
                     TAB_COLLECTION -> stationItems()
                     RECENT_ID -> recentItems()
@@ -317,7 +329,8 @@ class PlaybackService : MediaLibraryService() {
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
-                .setArtworkUri(s.artUrl?.let(Uri::parse))
+                // A square copy made by ArtCache, so the car doesn't stretch or blur the picture.
+                .setArtworkUri(s.artUrl?.let { ArtCache.uriFor(applicationContext, it) })
                 .setExtras(Bundle().apply { if (group != null) putString(STYLE_GROUP_TITLE, group) })
                 .build(),
         )

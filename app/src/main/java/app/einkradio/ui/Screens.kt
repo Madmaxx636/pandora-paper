@@ -854,7 +854,7 @@ private fun PagedStations(
 // ---------------------------------------------------------------------------------------------
 
 private val SETTINGS_PAGES = listOf(
-    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs", "Updates",
+    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs", "Updates", "Android Auto",
 )
 private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
 
@@ -878,6 +878,7 @@ fun SettingsScreen() {
                 2 -> PowerSettings()
                 3 -> BackgroundSettings()
                 5 -> UpdatesSettings()
+                6 -> CarSettings()
                 else -> Box(Modifier.weight(1f)) { LibraryScreen() }
             }
         }
@@ -959,6 +960,15 @@ private fun quitApp(context: Context) {
     Radio.quit()
     (context as? Activity)?.finishAndRemoveTask()
     Process.killProcess(Process.myPid())
+}
+
+@Composable
+private fun CarSettings() {
+    SettingRow("Open on", Prefs.CAR_TAB_LABELS[Prefs.carStartTab]) { Prefs.cycleCarStartTab() }
+    Hint(
+        "Android Auto opens the first tab of the app, and the other tab sits beside it. Pick which one you want " +
+            "first. If the car is already showing the app, go back to the app list and open it again to see the change.",
+    )
 }
 
 @Composable

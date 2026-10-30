@@ -72,6 +72,11 @@ object Prefs {
     var autoUpdate by mutableStateOf(true)
         private set
 
+    /** Which tab Android Auto opens on: 0 = For You, 1 = My Stations. The car shows the first tab first. */
+    val CAR_TAB_LABELS = arrayOf("For You", "My Stations")
+    var carStartTab by mutableIntStateOf(0)
+        private set
+
     /** When the app last asked GitHub for a newer release (ms since epoch). */
     val lastUpdateCheck: Long get() = settings.getLong("last_update_check", 0L)
 
@@ -117,6 +122,7 @@ object Prefs {
         yieldFocus = settings.getBoolean("yield_focus", true)
         resumeLast = settings.getBoolean("resume_last", true)
         autoUpdate = settings.getBoolean("auto_update", true)
+        carStartTab = settings.getInt("car_start_tab", 0).coerceIn(CAR_TAB_LABELS.indices)
         textScaleIndex = settings.getInt("text_scale", 1).coerceIn(TEXT_SCALES.indices)
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
@@ -158,6 +164,11 @@ object Prefs {
     fun toggleResumeLast() { resumeLast = !resumeLast; settings.edit().putBoolean("resume_last", resumeLast).apply() }
 
     fun toggleAutoUpdate() { autoUpdate = !autoUpdate; settings.edit().putBoolean("auto_update", autoUpdate).apply() }
+
+    fun cycleCarStartTab() {
+        carStartTab = (carStartTab + 1) % CAR_TAB_LABELS.size
+        settings.edit().putInt("car_start_tab", carStartTab).apply()
+    }
 
     fun saveUpdateCheck(time: Long) {
         settings.edit().putLong("last_update_check", time).apply()
