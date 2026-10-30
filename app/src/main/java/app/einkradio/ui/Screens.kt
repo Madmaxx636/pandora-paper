@@ -235,7 +235,7 @@ fun LoginScreen() {
     ) {
         Logo(96.dp)
         Spacer(Modifier.height(16.dp))
-        Text("E-Ink Radio", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Paper for Pandora", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Sign in with your Pandora account", color = mutedColor())
         Spacer(Modifier.height(28.dp))
         OutlinedTextField(
@@ -1084,7 +1084,7 @@ fun Splash(onDone: () -> Unit) {
         }
         Spacer(Modifier.height(24.dp))
         Text(
-            "E-Ink Radio",
+            "Paper for Pandora",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = if (step >= 4) cs.onBackground else Color.Transparent,
