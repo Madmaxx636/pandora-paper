@@ -137,6 +137,8 @@ object Radio {
                 }
                 track.value = next
                 publishQueue()
+                // Songs already played stay in the queue otherwise, and "previous" would go back to them.
+                scope.launch(Dispatchers.Main) { prunePlayed() }
                 if (player.mediaItemCount - player.currentMediaItemIndex <= REFILL_WHEN_REMAINING) refill()
             }
 
@@ -614,6 +616,14 @@ object Radio {
         if (alreadyLoved.isNotEmpty()) loved.value = loved.value + alreadyLoved.associate { it.ratingKey to "" }
         player.addMediaItems(withArt.map(::mediaItem))
         publishQueue()
+    }
+
+    private fun prunePlayed() {
+        val index = player.currentMediaItemIndex
+        if (index > 0) {
+            player.removeMediaItems(0, index)
+            publishQueue()
+        }
     }
 
     private fun publishQueue() {

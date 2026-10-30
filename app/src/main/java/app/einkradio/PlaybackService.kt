@@ -1,13 +1,17 @@
 package app.einkradio
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -38,7 +42,8 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        val librarySession = MediaLibrarySession.Builder(this, Radio.player, LibraryCallback()).build()
+        setMediaNotificationProvider(RadioNotificationProvider(this).apply { setSmallIcon(R.drawable.ic_stat_radio) })
+        val librarySession = MediaLibrarySession.Builder(this, RadioPlayer(Radio.player), LibraryCallback()).build()
         session = librarySession
 
         // Keep the Like button's state in step with the playing song.
@@ -66,6 +71,62 @@ class PlaybackService : MediaLibraryService() {
         session?.release()
         session = null
         super.onDestroy()
+    }
+
+    /**
+     * What the notification, lock screen, car and launchers see of the player. A radio can't go back to
+     * an earlier song, rewind or seek, so those controls are removed; skip is always offered while a
+     * station is loaded, and goes through [Radio.skip] so a short queue gets refilled.
+     */
+    private class RadioPlayer(player: Player) : ForwardingPlayer(player) {
+        override fun getAvailableCommands(): Player.Commands {
+            val builder = super.getAvailableCommands().buildUpon().removeAll(
+                Player.COMMAND_SEEK_TO_PREVIOUS,
+                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                Player.COMMAND_SEEK_BACK,
+                Player.COMMAND_SEEK_FORWARD,
+                Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+                Player.COMMAND_SET_SHUFFLE_MODE,
+                Player.COMMAND_SET_REPEAT_MODE,
+            )
+            if (Radio.station.value != null) {
+                builder.addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            }
+            return builder.build()
+        }
+
+        override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
+
+        override fun seekToNext() = Radio.skip()
+        override fun seekToNextMediaItem() = Radio.skip()
+        override fun seekToPrevious() = Unit
+        override fun seekToPreviousMediaItem() = Unit
+        override fun seekBack() = Unit
+        override fun seekForward() = Unit
+    }
+
+    /**
+     * Notification buttons in a radio order: Dislike, Play/Pause, Skip, Like. The default puts the custom
+     * buttons after the transport buttons, which leaves Dislike out of the collapsed view.
+     */
+    private class RadioNotificationProvider(context: Context) : DefaultMediaNotificationProvider(context) {
+        override fun getMediaButtons(
+            session: MediaSession,
+            playerCommands: Player.Commands,
+            customLayout: ImmutableList<CommandButton>,
+            showPauseButton: Boolean,
+        ): ImmutableList<CommandButton> {
+            val all = super.getMediaButtons(session, playerCommands, customLayout, showPauseButton)
+            val dislike = all.firstOrNull { it.sessionCommand?.customAction == ACTION_DISLIKE }
+            val like = all.firstOrNull { it.sessionCommand?.customAction == ACTION_LIKE }
+            val transport = all.filter { it.sessionCommand == null }
+            return ImmutableList.builder<CommandButton>().apply {
+                dislike?.let(::add)
+                addAll(transport)
+                like?.let(::add)
+            }.build()
+        }
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {

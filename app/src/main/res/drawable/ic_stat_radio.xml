@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "P with a note head" mark as a single-colour status-bar icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group
+        android:pivotX="294"
+        android:pivotY="275"
+        android:scaleX="1.25"
+        android:scaleY="1.25"
+        android:translateX="-38"
+        android:translateY="-19">
+        <group
+            android:translateX="14"
+            android:translateY="8">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:fillType="evenOdd"
+                android:pathData="M214,100 H300 C390,100 432,150 432,215 C432,280 390,330 300,330 H266 V352 H214 Z M266,156 H298 C340,156 372,180 372,215 C372,250 340,274 298,274 H266 Z" />
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M128,372 a62,62 0 1,0 124,0 a62,62 0 1,0 -124,0 Z" />
+        </group>
+    </group>
+</vector>
