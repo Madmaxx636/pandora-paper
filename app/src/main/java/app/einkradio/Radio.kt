@@ -353,6 +353,11 @@ object Radio {
         }
     }
 
+    /** Starts the current song again from the beginning. */
+    fun replay() {
+        if (player.currentMediaItem != null) player.seekTo(0)
+    }
+
     fun togglePlay() {
         if (player.isPlaying) player.pause() else player.play()
     }
@@ -632,16 +637,25 @@ object Radio {
             .mapNotNull { tracks[player.getMediaItemAt(it).mediaId] }
     }
 
-    private fun mediaItem(t: Track): MediaItem = MediaItem.Builder()
-        .setMediaId(t.id)
-        .setUri(t.audioUrl)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(t.title)
-                .setArtist(t.artist)
-                .setAlbumTitle(t.album)
-                .setArtworkUri((t.artUrl ?: t.artUrls.lastOrNull())?.let(android.net.Uri::parse))
-                .build(),
-        )
-        .build()
+    /**
+     * What the notification, lock screen, car and launchers show. They display a title and one line
+     * under it, so that line carries the artist and the station ("Artist · Station"). The album is left
+     * out: the car appended it in brackets after the artist, which cluttered the line.
+     */
+    private fun mediaItem(t: Track): MediaItem {
+        val stationName = station.value?.name
+        val byline = listOfNotNull(t.artist.takeIf { it.isNotBlank() }, stationName?.takeIf { it.isNotBlank() })
+            .joinToString(" · ")
+        return MediaItem.Builder()
+            .setMediaId(t.id)
+            .setUri(t.audioUrl)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(t.title)
+                    .setArtist(byline)
+                    .setArtworkUri((t.artUrl ?: t.artUrls.lastOrNull())?.let(android.net.Uri::parse))
+                    .build(),
+            )
+            .build()
+    }
 }

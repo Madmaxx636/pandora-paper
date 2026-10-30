@@ -120,9 +120,11 @@ class PlaybackService : MediaLibraryService() {
             val all = super.getMediaButtons(session, playerCommands, customLayout, showPauseButton)
             val dislike = all.firstOrNull { it.sessionCommand?.customAction == ACTION_DISLIKE }
             val like = all.firstOrNull { it.sessionCommand?.customAction == ACTION_LIKE }
+            val replay = all.firstOrNull { it.sessionCommand?.customAction == ACTION_REPLAY }
             val transport = all.filter { it.sessionCommand == null }
             return ImmutableList.builder<CommandButton>().apply {
                 dislike?.let(::add)
+                replay?.let(::add)
                 addAll(transport)
                 like?.let(::add)
             }.build()
@@ -137,6 +139,7 @@ class PlaybackService : MediaLibraryService() {
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(LIKE_COMMAND)
                 .add(DISLIKE_COMMAND)
+                .add(REPLAY_COMMAND)
                 .build()
             val liked = Radio.track.value?.let { it.ratingKey in Radio.loved.value } == true
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -154,6 +157,7 @@ class PlaybackService : MediaLibraryService() {
             when (customCommand.customAction) {
                 ACTION_LIKE -> Radio.toggleLove()
                 ACTION_DISLIKE -> Radio.ban()
+                ACTION_REPLAY -> Radio.replay()
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -249,6 +253,11 @@ class PlaybackService : MediaLibraryService() {
             .setSessionCommand(DISLIKE_COMMAND)
             .build(),
         CommandButton.Builder()
+            .setDisplayName("Replay")
+            .setIconResId(R.drawable.ic_replay)
+            .setSessionCommand(REPLAY_COMMAND)
+            .build(),
+        CommandButton.Builder()
             .setDisplayName(if (liked) "Remove like" else "Like")
             .setIconResId(if (liked) R.drawable.ic_like_on else R.drawable.ic_like)
             .setSessionCommand(LIKE_COMMAND)
@@ -337,7 +346,9 @@ class PlaybackService : MediaLibraryService() {
         const val LOGIN_WAIT_MS = 20_000L
         const val ACTION_LIKE = "app.einkradio.LIKE"
         const val ACTION_DISLIKE = "app.einkradio.DISLIKE"
+        const val ACTION_REPLAY = "app.einkradio.REPLAY"
         val LIKE_COMMAND = SessionCommand(ACTION_LIKE, Bundle.EMPTY)
         val DISLIKE_COMMAND = SessionCommand(ACTION_DISLIKE, Bundle.EMPTY)
+        val REPLAY_COMMAND = SessionCommand(ACTION_REPLAY, Bundle.EMPTY)
     }
 }
