@@ -163,6 +163,19 @@ object Prefs {
         settings.edit().putLong("last_update_check", time).apply()
     }
 
+    /** Tokens of the stations played most recently, newest first. */
+    val recentStations: List<String>
+        get() = settings.getString("recent_stations", "").orEmpty().split(',').filter { it.isNotEmpty() }
+
+    fun addRecentStation(token: String) {
+        val next = (listOf(token) + recentStations.filter { it != token }).take(10)
+        settings.edit().putString("recent_stations", next.joinToString(",")).apply()
+    }
+
+    fun clearRecentStations() {
+        settings.edit().remove("recent_stations").apply()
+    }
+
     fun saveLastStation(token: String?) {
         settings.edit().apply { if (token == null) remove("last_station") else putString("last_station", token) }.apply()
     }

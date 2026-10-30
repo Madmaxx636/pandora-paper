@@ -217,6 +217,7 @@ object Radio {
         tracks.clear()
         Prefs.clearLogin()
         Prefs.saveLastStation(null)
+        Prefs.clearRecentStations()
         resumePending = false
         stations.value = emptyList()
         station.value = null
@@ -243,6 +244,7 @@ object Radio {
                 val batch = withContext(Dispatchers.IO) { api.getPlaylist(s, quality) }
                 station.value = s
                 Prefs.saveLastStation(s.token)
+                Prefs.addRecentStation(s.token)
                 player.clearMediaItems()
                 tracks.clear()
                 enqueue(batch)

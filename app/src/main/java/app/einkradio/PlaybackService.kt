@@ -179,10 +179,10 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val item = if (mediaId == ROOT_ID || mediaId == RECENT_ID) {
-                rootItem(mediaId)
-            } else {
-                Radio.stations.value.firstOrNull { STATION_PREFIX + it.token == mediaId }?.let(::stationItem)
+            val item = when (mediaId) {
+                ROOT_ID, RECENT_ID -> rootItem(mediaId)
+                TAB_FOR_YOU, TAB_COLLECTION -> tabItem(mediaId)
+                else -> Radio.stations.value.firstOrNull { STATION_PREFIX + it.token == mediaId }?.let(::stationItem)
             }
             return Futures.immediateFuture(
                 if (item != null) LibraryResult.ofItem(item, null)
@@ -204,7 +204,9 @@ class PlaybackService : MediaLibraryService() {
                 // doesn't see an empty list.
                 withTimeoutOrNull(LOGIN_WAIT_MS) { Radio.restoring.first { !it } }
                 val items = when (parentId) {
-                    ROOT_ID -> stationItems()
+                    ROOT_ID -> listOf(tabItem(TAB_FOR_YOU), tabItem(TAB_COLLECTION))
+                    TAB_FOR_YOU -> forYouItems()
+                    TAB_COLLECTION -> stationItems()
                     RECENT_ID -> recentItems()
                     else -> emptyList()
                 }
@@ -246,16 +248,20 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Replay first, then Dislike and Like. The car puts the first extra button beside play/skip and the
+     * rest together on the right, which is how the official app's controls are arranged.
+     */
     private fun buttons(liked: Boolean): ImmutableList<CommandButton> = ImmutableList.of(
-        CommandButton.Builder()
-            .setDisplayName("Dislike")
-            .setIconResId(R.drawable.ic_dislike)
-            .setSessionCommand(DISLIKE_COMMAND)
-            .build(),
         CommandButton.Builder()
             .setDisplayName("Replay")
             .setIconResId(R.drawable.ic_replay)
             .setSessionCommand(REPLAY_COMMAND)
+            .build(),
+        CommandButton.Builder()
+            .setDisplayName("Dislike")
+            .setIconResId(R.drawable.ic_dislike)
+            .setSessionCommand(DISLIKE_COMMAND)
             .build(),
         CommandButton.Builder()
             .setDisplayName(if (liked) "Remove like" else "Like")
@@ -305,7 +311,7 @@ class PlaybackService : MediaLibraryService() {
                         s.isQuickMix -> "A mix of your stations"
                         s.isThumbprint -> "Built from your thumbs"
                         s.isShared -> "Shared station"
-                        else -> null
+                        else -> "Station"
                     },
                 )
                 .setIsBrowsable(false)
@@ -331,9 +337,54 @@ class PlaybackService : MediaLibraryService() {
             .take(MAX_STATIONS)
     }
 
+    /** A top tab in the car: "For You" (cards for recent and pinned stations) or "My Collection" (the full list). */
+    private fun tabItem(id: String): MediaItem {
+        val forYou = id == TAB_FOR_YOU
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(if (forYou) "For You" else "My Collection")
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    // The hints on a tab say how its own children are drawn: cards for "For You", a list otherwise.
+                    .setExtras(
+                        Bundle().apply {
+                            putBoolean(STYLE_SUPPORTED, true)
+                            putInt(STYLE_PLAYABLE, if (forYou) STYLE_GRID else STYLE_LIST)
+                            putInt(STYLE_BROWSABLE, STYLE_LIST)
+                        },
+                    )
+                    .build(),
+            )
+            .build()
+    }
+
+    /**
+     * The "For You" cards: recently played stations, then pinned ones, then a short run of the rest, each
+     * group under its own heading. A station only appears once.
+     */
+    private fun forYouItems(): List<MediaItem> {
+        val all = Radio.stations.value
+        val byToken = all.associateBy { it.token }
+        val recents = Prefs.recentStations.mapNotNull(byToken::get).take(MAX_RECENT)
+        val shown = recents.map { it.token }.toSet()
+        val pins = all.filter { it.token in Prefs.pinned && it.token !in shown }
+        val taken = shown + pins.map { it.token }
+        val rest = all.filter { it.token !in taken }.sortedBy { !it.isSpecial }.take(MAX_FOR_YOU)
+        return recents.map { stationItem(it, "Recently played") } +
+            pins.map { stationItem(it, "Pinned") } +
+            rest.map { stationItem(it, "Stations") }
+    }
+
     private companion object {
         const val ROOT_ID = "root"
         const val RECENT_ID = "recent"
+        const val TAB_FOR_YOU = "tab:foryou"
+        const val TAB_COLLECTION = "tab:collection"
+        const val MAX_RECENT = 6
+        const val MAX_FOR_YOU = 12
         const val STATION_PREFIX = "station:"
         const val MAX_STATIONS = 100
 
@@ -343,6 +394,7 @@ class PlaybackService : MediaLibraryService() {
         const val STYLE_BROWSABLE = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
         const val STYLE_GROUP_TITLE = "android.media.browse.CONTENT_STYLE_GROUP_TITLE_HINT"
         const val STYLE_LIST = 1
+        const val STYLE_GRID = 2
         const val LOGIN_WAIT_MS = 20_000L
         const val ACTION_LIKE = "app.einkradio.LIKE"
         const val ACTION_DISLIKE = "app.einkradio.DISLIKE"
