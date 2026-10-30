@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import app.einkradio.ui.MiniPlayer
 import app.einkradio.ui.NavBar
 import app.einkradio.ui.NowPlayingScreen
 import app.einkradio.ui.SettingsScreen
+import app.einkradio.ui.Splash
 import app.einkradio.ui.StationsScreen
 import app.einkradio.ui.mutedColor
 
@@ -55,6 +57,9 @@ private val TABS = listOf("Stations", "Playing", "Settings")
 @Composable
 private fun Root() {
     val loggedIn by Radio.loggedIn.collectAsState()
+    // Play the intro once per launch when there's a saved login to restore.
+    var showSplash by rememberSaveable { mutableStateOf(!Radio.splashPlayed && Prefs.savedLogin() != null) }
+
     // Open on Playing when a station is about to be resumed.
     var tab by rememberSaveable {
         mutableIntStateOf(if (Prefs.resumeLast && Prefs.lastStation != null) TAB_PLAYING else TAB_STATIONS)
@@ -66,6 +71,14 @@ private fun Root() {
             .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding(),
     ) {
+        if (showSplash) {
+            Splash {
+                Radio.splashPlayed = true
+                showSplash = false
+            }
+            return@Column
+        }
+
         ErrorBanner()
 
         if (!loggedIn) {

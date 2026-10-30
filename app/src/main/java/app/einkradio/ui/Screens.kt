@@ -4,7 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,7 +80,9 @@ import android.content.Intent
 import android.os.Process
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 
 private val CoverRadius = 12.dp
 
@@ -85,7 +91,7 @@ private val CoverRadius = 12.dp
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun plainClick(onClick: () -> Unit): Modifier = Modifier.clickable(
+internal fun plainClick(onClick: () -> Unit): Modifier = Modifier.clickable(
     interactionSource = remember { MutableInteractionSource() },
     indication = null,
     onClick = onClick,
@@ -123,7 +129,7 @@ fun Btn(
 }
 
 @Composable
-private fun RoundButton(
+internal fun RoundButton(
     icon: ImageVector,
     description: String,
     size: Dp,
@@ -155,7 +161,7 @@ private fun RoundButton(
 }
 
 @Composable
-private fun Cover(urls: List<String>, modifier: Modifier = Modifier, radius: Dp = CoverRadius) {
+internal fun Cover(urls: List<String>, modifier: Modifier = Modifier, radius: Dp = CoverRadius) {
     val shape = RoundedCornerShape(radius)
     val grey = if (Prefs.eink) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) else null
     // Try each candidate in turn; if every one fails, the placeholder note stays.
@@ -335,7 +341,7 @@ fun NowPlayingScreen() {
             ProgressRow()
             Spacer(Modifier.height(12.dp))
 
-            val isLoved = loved.containsKey(t.id)
+            val isLoved = loved.containsKey(t.ratingKey)
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -369,11 +375,11 @@ fun NowPlayingScreen() {
 }
 
 @Composable
-private fun TrackRow(t: Track) {
+private fun TrackRow(t: Track, allowLove: Boolean = true, allowBan: Boolean = true) {
     val loved by Radio.loved.collectAsState()
     val banned by Radio.banned.collectAsState()
-    val isLoved = loved.containsKey(t.id)
-    val isBanned = banned.containsKey(t.id)
+    val isLoved = loved.containsKey(t.ratingKey)
+    val isBanned = banned.containsKey(t.ratingKey)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -393,7 +399,7 @@ private fun TrackRow(t: Track) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        RoundButton(
+        if (allowBan) RoundButton(
             AppIcons.ThumbUp,
             if (isBanned) "Remove dislike" else "Dislike song",
             44.dp, 22.dp,
@@ -406,7 +412,7 @@ private fun TrackRow(t: Track) {
             },
         ) { Radio.ban(t) }
         Spacer(Modifier.width(4.dp))
-        RoundButton(
+        if (allowLove) RoundButton(
             AppIcons.ThumbUp,
             if (isLoved) "Remove love" else "Love song",
             44.dp, 22.dp,
@@ -422,7 +428,12 @@ private fun TrackRow(t: Track) {
 
 /** A list of songs: paged with Prev/Next when "Paged lists" is on, otherwise scrollable. */
 @Composable
-private fun TrackList(tracks: List<Track>, emptyText: String) {
+internal fun TrackList(
+    tracks: List<Track>,
+    emptyText: String,
+    allowLove: Boolean = true,
+    allowBan: Boolean = true,
+) {
     if (tracks.isEmpty()) {
         Text(emptyText, color = mutedColor())
         return
@@ -437,7 +448,7 @@ private fun TrackList(tracks: List<Track>, emptyText: String) {
             val now = page.coerceIn(0, pages - 1)
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.weight(1f)) {
-                    tracks.drop(now * perPage).take(perPage).forEach { TrackRow(it) }
+                    tracks.drop(now * perPage).take(perPage).forEach { TrackRow(it, allowLove, allowBan) }
                 }
                 if (pages > 1) {
                     Row(
@@ -453,7 +464,7 @@ private fun TrackList(tracks: List<Track>, emptyText: String) {
             }
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(tracks) { _, t -> TrackRow(t) }
+                itemsIndexed(tracks) { _, t -> TrackRow(t, allowLove, allowBan) }
             }
         }
     }
@@ -521,7 +532,7 @@ private fun stationColor(name: String): Color {
 }
 
 @Composable
-private fun StationAvatar(station: Station, size: Dp) {
+internal fun StationAvatar(station: Station, size: Dp) {
     val cs = MaterialTheme.colorScheme
     val eink = Prefs.eink
     val icon = when {
@@ -577,12 +588,29 @@ private fun PlayingBars() {
     }
 }
 
+/** Tap and touch-and-hold, with no ripple. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun clickOrHold(onClick: () -> Unit, onLongClick: () -> Unit): Modifier {
+    val haptics = LocalHapticFeedback.current
+    return Modifier.combinedClickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+        onClick = onClick,
+        onLongClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLongClick()
+        },
+    )
+}
+
 @Composable
 private fun StationRow(
     station: Station,
     selected: Boolean,
     pinned: Boolean,
     onPin: () -> Unit,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     val subtitle = when {
@@ -595,7 +623,7 @@ private fun StationRow(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 64.dp)
-            .then(plainClick(onClick))
+            .then(clickOrHold(onClick, onLongClick))
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -638,7 +666,7 @@ private fun StationRow(
 }
 
 @Composable
-private fun Divider() {
+internal fun Divider() {
     val fg = MaterialTheme.colorScheme.onBackground
     HorizontalDivider(color = if (Prefs.eink) fg else fg.copy(alpha = 0.12f))
 }
@@ -656,11 +684,16 @@ private sealed interface StationItem {
     data class Entry(val station: Station) : StationItem
 }
 
+/** Lets a station row open its options screen when it is touched and held. */
+internal val LocalStationDetail = staticCompositionLocalOf<(Station) -> Unit> { {} }
+
 @Composable
 fun StationsScreen(onPicked: () -> Unit) {
     val all by Radio.stations.collectAsState()
     val current by Radio.station.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
+    var detailToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var creating by rememberSaveable { mutableStateOf(false) }
     val sortAz = Prefs.sortAz
     val pinned = Prefs.pinned
 
@@ -690,41 +723,60 @@ fun StationsScreen(onPicked: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search stations…") },
-                singleLine = true,
-                shape = RoundedCornerShape(if (Prefs.eink) 6.dp else 28.dp),
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Btn("A–Z", selected = sortAz, compact = true) { Prefs.toggleSort() }
-        }
-        Spacer(Modifier.height(8.dp))
+    val detailStation = all.firstOrNull { it.token == detailToken }
+    if (creating) {
+        NewStationScreen(onBack = { creating = false })
+        return
+    }
+    if (detailStation != null) {
+        StationDetailScreen(detailStation, onBack = { detailToken = null }, onPlay = onPicked)
+        return
+    }
 
-        if (items.isEmpty()) {
+    CompositionLocalProvider(LocalStationDetail provides { detailToken = it.token }) {
+        Column(Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search stations…") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(if (Prefs.eink) 6.dp else 28.dp),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Btn("A–Z", selected = sortAz, compact = true) { Prefs.toggleSort() }
+                Spacer(Modifier.width(8.dp))
+                Btn("New", compact = true) { creating = true }
+            }
             Text(
-                if (all.isEmpty()) "No stations yet" else "No matches",
+                "Touch and hold a station for options",
                 color = mutedColor(),
-                modifier = Modifier.padding(top = 24.dp).fillMaxWidth(),
-                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
             )
-        } else if (Prefs.pagedLists) {
-            PagedStations(items, current, onPicked, Modifier.weight(1f))
-        } else {
-            LazyColumn(Modifier.weight(1f)) {
-                itemsIndexed(
-                    items,
-                    key = { _, item ->
-                        when (item) {
-                            is StationItem.Header -> "header:${item.title}"
-                            is StationItem.Entry -> item.station.token
-                        }
-                    },
-                ) { i, item -> StationItemView(item, items.getOrNull(i - 1), current, onPicked) }
+
+            if (items.isEmpty()) {
+                Text(
+                    if (all.isEmpty()) "No stations yet" else "No matches",
+                    color = mutedColor(),
+                    modifier = Modifier.padding(top = 24.dp).fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            } else if (Prefs.pagedLists) {
+                PagedStations(items, current, onPicked, Modifier.weight(1f))
+            } else {
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(
+                        items,
+                        key = { _, item ->
+                            when (item) {
+                                is StationItem.Header -> "header:${item.title}"
+                                is StationItem.Entry -> item.station.token
+                            }
+                        },
+                    ) { i, item -> StationItemView(item, items.getOrNull(i - 1), current, onPicked) }
+                }
             }
         }
     }
@@ -737,6 +789,7 @@ private fun StationItemView(
     current: Station?,
     onPicked: () -> Unit,
 ) {
+    val openDetail = LocalStationDetail.current
     when (item) {
         is StationItem.Header -> Text(
             item.title,
@@ -754,6 +807,7 @@ private fun StationItemView(
                 selected = s == current,
                 pinned = s.token in Prefs.pinned,
                 onPin = { Prefs.togglePin(s.token) },
+                onLongClick = { openDetail(s) },
             ) { Radio.play(s); onPicked() }
         }
     }
@@ -798,7 +852,9 @@ private fun PagedStations(
 // Settings
 // ---------------------------------------------------------------------------------------------
 
-private val SETTINGS_PAGES = listOf("Appearance", "Audio quality", "Power saving", "Background playback")
+private val SETTINGS_PAGES = listOf(
+    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs",
+)
 private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
 
 @Composable
@@ -819,7 +875,8 @@ fun SettingsScreen() {
                 0 -> AppearanceSettings()
                 1 -> QualitySettings()
                 2 -> PowerSettings()
-                else -> BackgroundSettings()
+                3 -> BackgroundSettings()
+                else -> Box(Modifier.weight(1f)) { LibraryScreen() }
             }
         }
     }
@@ -945,6 +1002,99 @@ private fun SettingRow(label: String, value: String, onClick: () -> Unit) {
 // ---------------------------------------------------------------------------------------------
 // Chrome: mini player and tab bar
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Everything you've liked or disliked on Pandora, pulled from each station. Undoing a rating here
+ * removes the song from its list.
+ */
+@Composable
+fun LibraryScreen() {
+    val up by Radio.thumbsUp.collectAsState()
+    val down by Radio.thumbsDown.collectAsState()
+    val loved by Radio.loved.collectAsState()
+    val banned by Radio.banned.collectAsState()
+    val loading by Radio.libraryLoading.collectAsState()
+    var view by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { if (up.isEmpty() && down.isEmpty()) Radio.refreshLibrary() }
+
+    val liked = up.filter { it.ratingKey in loved }
+    val disliked = down.filter { it.ratingKey in banned }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Btn("Liked (${liked.size})", Modifier.weight(1f), selected = view == 0, compact = true) { view = 0 }
+            Btn("Disliked (${disliked.size})", Modifier.weight(1f), selected = view == 1, compact = true) { view = 1 }
+            Btn(if (loading) "Syncing…" else "Sync", compact = true) { Radio.refreshLibrary() }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            val empty = if (loading) "Loading your thumbs from Pandora…" else "Nothing here yet"
+            if (view == 0) TrackList(liked, empty, allowBan = false)
+            else TrackList(disliked, empty, allowLove = false)
+        }
+    }
+}
+
+private const val SPLASH_STEPS = 4
+private const val SPLASH_FRAME_MS = 350L
+
+/**
+ * One short intro for a cold start: the tile, the P, the note head and the name appear in separate
+ * steps instead of fading, which suits e-ink (each step is one clean refresh). It stays up until the
+ * saved login has finished, so the sign-in screen never flashes while logging back in.
+ */
+@Composable
+fun Splash(onDone: () -> Unit) {
+    val restoring by Radio.restoring.collectAsState()
+    var step by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        repeat(SPLASH_STEPS) {
+            delay(SPLASH_FRAME_MS)
+            step = it + 1
+        }
+    }
+    LaunchedEffect(step, restoring) {
+        if (step >= SPLASH_STEPS && !restoring) {
+            delay(SPLASH_FRAME_MS)
+            onDone()
+        }
+    }
+
+    val cs = MaterialTheme.colorScheme
+    val mono = Prefs.eink
+    val shape = RoundedCornerShape(28.dp)
+    val tile = if (mono) Brush.verticalGradient(listOf(cs.onBackground, cs.onBackground))
+    else Brush.verticalGradient(listOf(AccentTop, AccentBottom))
+    val glyphTint = if (mono) ColorFilter.tint(cs.background) else null
+
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Fixed size from the start so nothing shifts between steps.
+        Box(
+            Modifier
+                .size(128.dp)
+                .clip(shape)
+                .then(if (step >= 1) Modifier.background(tile, shape) else Modifier),
+        ) {
+            if (step >= 2) Image(AppIcons.LogoP, null, Modifier.fillMaxSize(), colorFilter = glyphTint)
+            if (step >= 3) Image(AppIcons.LogoNote, null, Modifier.fillMaxSize(), colorFilter = glyphTint)
+        }
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "E-Ink Radio",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (step >= 4) cs.onBackground else Color.Transparent,
+        )
+        Text(
+            "Signing in…",
+            color = if (step >= 4 && restoring) mutedColor() else Color.Transparent,
+        )
+    }
+}
 
 /** Strip shown above the tab bar while a song is loaded; tapping it opens Now Playing. */
 @Composable

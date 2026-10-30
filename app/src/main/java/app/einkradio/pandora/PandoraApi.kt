@@ -4,6 +4,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -35,7 +36,32 @@ data class Track(
     val audioUrl: String,
     /** The station this song was queued from, so it can be rated after the station changes. */
     val stationToken: String? = null,
-)
+    /** Pandora's own rating for the song: 1 if it is already thumbed up, otherwise 0. */
+    val rating: Int = 0,
+) {
+    /**
+     * Identifies a song by artist and title, the same on every station. Pandora gives each play a
+     * fresh track token, so ratings (which belong to the song) can't be matched on that.
+     */
+    val ratingKey: String get() = "${artist.trim().lowercase()}|${title.trim().lowercase()}"
+}
+
+/** The songs thumbed up and down on one station. A track's [Track.id] here is its feedback id. */
+class Feedback(val up: List<Track>, val down: List<Track>)
+
+/** One piece of music a station is built from: an artist, a song or a genre. */
+data class Seed(val id: String, val name: String, val subtitle: String?, val artUrl: String?)
+
+/** What the station screen shows: its seeds, its thumbs, and when it was created (ms since epoch). */
+class StationDetail(val seeds: List<Seed>, val feedback: Feedback, val created: Long?)
+
+enum class HitKind { ARTIST, SONG, GENRE }
+
+data class SearchHit(val token: String, val title: String, val subtitle: String?, val kind: HitKind)
+
+class SearchResults(val artists: List<SearchHit>, val songs: List<SearchHit>, val genres: List<SearchHit>) {
+    val isEmpty: Boolean get() = artists.isEmpty() && songs.isEmpty() && genres.isEmpty()
+}
 
 /**
  * Client for Pandora's unofficial JSON v5 API (see http://6xq.net/playground/pandora-apidoc/json/).
@@ -136,8 +162,119 @@ class PandoraApi {
                 artUrl = o.optString("albumArtUrl").takeIf { it.isNotEmpty() } ?: art.firstOrNull(),
                 artUrls = art,
                 audioUrl = audio,
+                rating = o.optInt("songRating"),
             )
         }
+    }
+
+    fun getStationDetail(stationToken: String): StationDetail = authed {
+        val result = call(
+            "station.getStation",
+            JSONObject().put("stationToken", stationToken).put("includeExtendedAttributes", true),
+        )
+        val feedback = result.optJSONObject("feedback")
+        StationDetail(
+            seeds = parseSeeds(result.optJSONObject("music")),
+            feedback = Feedback(
+                up = parseFeedback(feedback?.optJSONArray("thumbsUp"), stationToken),
+                down = parseFeedback(feedback?.optJSONArray("thumbsDown"), stationToken),
+            ),
+            created = result.optJSONObject("dateCreated")?.optLong("time")?.takeIf { it > 0 },
+        )
+    }
+
+    /** Everything thumbed up or down on [stationToken], newest first. */
+    fun getFeedback(stationToken: String): Feedback = getStationDetail(stationToken).feedback
+
+    fun search(text: String): SearchResults = authed {
+        val result = call(
+            "music.search",
+            JSONObject()
+                .put("searchText", text)
+                .put("includeNearMatches", false)
+                .put("includeGenreStations", true),
+        )
+        SearchResults(
+            artists = result.optJSONArray("artists").objects().map {
+                SearchHit(it.optString("musicToken"), it.optString("artistName"), null, HitKind.ARTIST)
+            },
+            songs = result.optJSONArray("songs").objects().map {
+                SearchHit(it.optString("musicToken"), it.optString("songName"), it.optString("artistName"), HitKind.SONG)
+            },
+            genres = result.optJSONArray("genreStations").objects().map {
+                SearchHit(it.optString("musicToken"), it.optString("stationName"), "Genre station", HitKind.GENRE)
+            },
+        ).let { r ->
+            SearchResults(
+                r.artists.filter { it.token.isNotEmpty() },
+                r.songs.filter { it.token.isNotEmpty() },
+                r.genres.filter { it.token.isNotEmpty() },
+            )
+        }
+    }
+
+    fun addSeed(stationToken: String, musicToken: String) {
+        authed {
+            call("station.addMusic", JSONObject().put("stationToken", stationToken).put("musicToken", musicToken))
+        }
+    }
+
+    fun removeSeed(seedId: String) {
+        authed { call("station.deleteMusic", JSONObject().put("seedId", seedId)) }
+    }
+
+    fun renameStation(stationToken: String, name: String) {
+        authed {
+            call("station.renameStation", JSONObject().put("stationToken", stationToken).put("stationName", name))
+        }
+    }
+
+    fun deleteStation(stationToken: String) {
+        authed { call("station.deleteStation", JSONObject().put("stationToken", stationToken)) }
+    }
+
+    fun createStation(musicToken: String) {
+        authed { call("station.createStation", JSONObject().put("musicToken", musicToken)) }
+    }
+
+    private fun JSONArray?.objects(): List<JSONObject> =
+        if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
+
+    private fun parseSeeds(music: JSONObject?): List<Seed> {
+        if (music == null) return emptyList()
+        fun art(o: JSONObject) = o.optString("artUrl").takeIf { it.isNotEmpty() }
+        val seeds = mutableListOf<Seed>()
+        music.optJSONArray("artists").objects().forEach {
+            seeds += Seed(it.optString("seedId"), it.optString("artistName"), "Artist", art(it))
+        }
+        music.optJSONArray("songs").objects().forEach {
+            seeds += Seed(it.optString("seedId"), it.optString("songName"), it.optString("artistName"), art(it))
+        }
+        music.optJSONArray("genres").objects().forEach {
+            seeds += Seed(it.optString("seedId"), it.optString("genreName"), "Genre", null)
+        }
+        return seeds.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
+    }
+
+    private fun parseFeedback(entries: JSONArray?, stationToken: String): List<Track> {
+        if (entries == null) return emptyList()
+        return (0 until entries.length())
+            .mapNotNull { entries.optJSONObject(it) }
+            .sortedByDescending { it.optJSONObject("dateCreated")?.optLong("time") ?: 0L }
+            .map { o ->
+                val art = o.optString("albumArtUrl").takeIf { it.isNotEmpty() }
+                Track(
+                    id = o.optString("feedbackId"),
+                    title = o.optString("songName"),
+                    artist = o.optString("artistName"),
+                    album = o.optString("albumName"),
+                    artUrl = art,
+                    artUrls = listOfNotNull(art),
+                    audioUrl = "",
+                    stationToken = stationToken,
+                )
+            }
+            .filter { it.id.isNotEmpty() }
     }
 
     /**

@@ -18,16 +18,25 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.einkradio.pandora.PandoraApi
+import app.einkradio.pandora.SearchHit
+import app.einkradio.pandora.SearchResults
+import app.einkradio.pandora.Seed
+import app.einkradio.pandora.StationDetail
 import app.einkradio.pandora.Station
 import app.einkradio.pandora.Track
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /** Process-wide player and Pandora session; the UI and [PlaybackService] both use it. */
@@ -46,6 +55,8 @@ object Radio {
     private var batteryJob: Job? = null
     private var pauseStopJob: Job? = null
     private var sleepJob: Job? = null
+    private var libraryJob: Job? = null
+    private var searchJob: Job? = null
 
     private val audioAttributes = AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
@@ -59,6 +70,12 @@ object Radio {
         private set
 
     val loggedIn = MutableStateFlow(false)
+
+    /** True from launch until the saved login has succeeded or failed; the UI shows the splash meanwhile. */
+    val restoring = MutableStateFlow(false)
+
+    /** Set once the startup splash has played, so it runs once per process. */
+    var splashPlayed = false
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val stations = MutableStateFlow<List<Station>>(emptyList())
@@ -66,12 +83,23 @@ object Radio {
     val track = MutableStateFlow<Track?>(null)
     val isPlaying = MutableStateFlow(false)
 
-    /** Track id to feedback id for tracks loved this session (an empty id if Pandora sent none). */
+    /** Rating key ([Track.ratingKey]) to feedback id for loved songs (an empty id if not known yet). */
     val loved = MutableStateFlow<Map<String, String>>(emptyMap())
     val upNext = MutableStateFlow<List<Track>>(emptyList())
 
-    /** Same as [loved], for songs given a thumbs-down this session. */
+    /** Same as [loved], for disliked songs. */
     val banned = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** Everything thumbed up and down on Pandora, newest first, as of the last [refreshLibrary]. */
+    val thumbsUp = MutableStateFlow<List<Track>>(emptyList())
+    val thumbsDown = MutableStateFlow<List<Track>>(emptyList())
+    val libraryLoading = MutableStateFlow(false)
+
+    /** The open station screen's data, tagged with the station token it belongs to. */
+    val detail = MutableStateFlow<Pair<String, StationDetail>?>(null)
+    val detailLoading = MutableStateFlow(false)
+    val searchResults = MutableStateFlow<SearchResults?>(null)
+    val searching = MutableStateFlow(false)
 
     /** Songs already played this session, most recent first. */
     val history = MutableStateFlow<List<Track>>(emptyList())
@@ -148,7 +176,10 @@ object Radio {
     }
 
     fun autoLogin() {
-        Prefs.savedLogin()?.let { (user, pass) -> signIn(user, pass) }
+        Prefs.savedLogin()?.let { (user, pass) ->
+            restoring.value = true
+            signIn(user, pass)
+        }
     }
 
     fun signIn(user: String, pass: String) {
@@ -163,6 +194,7 @@ object Radio {
                 Prefs.saveLogin(user, pass)
                 stations.value = list
                 loggedIn.value = true
+                refreshLibrary()
                 if (resumePending) {
                     resumePending = false
                     startLastStation()
@@ -171,6 +203,7 @@ object Radio {
                 resumePending = false
                 error.value = e.message ?: "Sign-in failed"
             } finally {
+                restoring.value = false
                 busy.value = false
             }
         }
@@ -188,6 +221,8 @@ object Radio {
         track.value = null
         loved.value = emptyMap()
         banned.value = emptyMap()
+        thumbsUp.value = emptyList()
+        thumbsDown.value = emptyList()
         upNext.value = emptyList()
         history.value = emptyList()
         loggedIn.value = false
@@ -322,20 +357,25 @@ object Radio {
         if (player.hasNextMediaItem()) player.seekToNextMediaItem() else refill()
     }
 
-    /** Thumbs-up, or undo it if the song is already loved. Works for the current, queued or past songs. */
+    /**
+     * Thumbs-up, or undo it if the song is already loved. Works for the current, queued or past songs.
+     * Ratings are matched by artist and title ([Track.ratingKey]), so a song loved on one station
+     * shows as loved on every station.
+     */
     fun toggleLove(target: Track? = track.value) {
         val t = target ?: return
-        val stationToken = t.stationToken ?: station.value?.token ?: return
-        val existing = loved.value[t.id]
+        val key = t.ratingKey
+        val existing = loved.value[key]
         scope.launch {
             try {
                 if (existing != null) {
-                    if (existing.isNotEmpty()) withContext(Dispatchers.IO) { api.removeRating(existing) }
-                    loved.value = loved.value - t.id
+                    withContext(Dispatchers.IO) { deleteRating(t, existing) }
+                    loved.value = loved.value - key
                 } else {
+                    val stationToken = t.stationToken ?: station.value?.token ?: return@launch
                     val feedbackId = withContext(Dispatchers.IO) { api.rate(stationToken, t, true) }
-                    loved.value = loved.value + (t.id to (feedbackId ?: ""))
-                    banned.value = banned.value - t.id // a thumbs-up replaces a thumbs-down
+                    loved.value = loved.value + (key to (feedbackId ?: ""))
+                    banned.value = banned.value - key // a thumbs-up replaces a thumbs-down
                 }
             } catch (e: Exception) {
                 error.value = e.message ?: "Could not save rating"
@@ -349,21 +389,173 @@ object Radio {
      */
     fun ban(target: Track? = track.value) {
         val t = target ?: return
-        val stationToken = t.stationToken ?: station.value?.token ?: return
-        val existing = banned.value[t.id]
+        val key = t.ratingKey
+        val existing = banned.value[key]
         scope.launch {
             try {
                 if (existing != null) {
-                    if (existing.isNotEmpty()) withContext(Dispatchers.IO) { api.removeRating(existing) }
-                    banned.value = banned.value - t.id
+                    withContext(Dispatchers.IO) { deleteRating(t, existing) }
+                    banned.value = banned.value - key
                     return@launch
                 }
+                val stationToken = t.stationToken ?: station.value?.token ?: return@launch
                 val feedbackId = withContext(Dispatchers.IO) { api.rate(stationToken, t, false) }
-                banned.value = banned.value + (t.id to (feedbackId ?: ""))
-                loved.value = loved.value - t.id // a thumbs-down replaces a thumbs-up
+                banned.value = banned.value + (key to (feedbackId ?: ""))
+                loved.value = loved.value - key // a thumbs-down replaces a thumbs-up
                 if (t.id == track.value?.id) skip() else removeFromQueue(t.id)
             } catch (e: Exception) {
                 error.value = e.message ?: "Could not save rating"
+            }
+        }
+    }
+
+    /**
+     * Deletes a rating. A song that arrived already rated has no feedback id yet, so look it up on the
+     * station first.
+     */
+    private fun deleteRating(t: Track, feedbackId: String) {
+        val id = feedbackId.ifEmpty {
+            val stationToken = t.stationToken ?: station.value?.token
+                ?: throw IllegalStateException("Don't know which station rated this song")
+            val feedback = api.getFeedback(stationToken)
+            (feedback.up + feedback.down).firstOrNull { it.ratingKey == t.ratingKey }?.id
+                ?: throw IllegalStateException("Couldn't find that rating on Pandora")
+        }
+        api.removeRating(id)
+    }
+
+    /**
+     * Pulls every thumbs-up and thumbs-down from Pandora, station by station, and merges them into
+     * the rating state so songs you rated elsewhere show correctly here.
+     */
+    fun refreshLibrary() {
+        if (libraryJob?.isActive == true) return
+        val list = stations.value.filter { !it.isQuickMix }
+        if (list.isEmpty()) return
+        libraryJob = scope.launch {
+            libraryLoading.value = true
+            try {
+                val gate = Semaphore(4)
+                val results = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        list.map { s ->
+                            async { gate.withPermit { runCatching { api.getFeedback(s.token) }.getOrNull() } }
+                        }.awaitAll()
+                    }
+                }.filterNotNull()
+                if (results.isEmpty()) {
+                    error.value = "Couldn't load your liked and disliked songs"
+                    return@launch
+                }
+                val up = results.flatMap { it.up }.distinctBy { it.ratingKey }
+                val down = results.flatMap { it.down }.distinctBy { it.ratingKey }
+                val upIds = up.associate { it.ratingKey to it.id }
+                val downIds = down.associate { it.ratingKey to it.id }
+                thumbsUp.value = up
+                thumbsDown.value = down
+                // Pandora is the source of truth; it also fills in ids we were missing.
+                loved.value = (loved.value + upIds) - downIds.keys
+                banned.value = (banned.value + downIds) - upIds.keys
+            } finally {
+                libraryLoading.value = false
+            }
+        }
+    }
+
+    // --- Station management (the screen that opens when you touch and hold a station) ---
+
+    fun loadDetail(s: Station) {
+        scope.launch {
+            detailLoading.value = true
+            try {
+                val d = withContext(Dispatchers.IO) { api.getStationDetail(s.token) }
+                detail.value = s.token to d
+                // The thumbs lists also tell us the feedback ids needed to undo a rating.
+                val upIds = d.feedback.up.associate { it.ratingKey to it.id }
+                val downIds = d.feedback.down.associate { it.ratingKey to it.id }
+                loved.value = (loved.value + upIds) - downIds.keys
+                banned.value = (banned.value + downIds) - upIds.keys
+            } catch (e: Exception) {
+                error.value = e.message ?: "Couldn't load station details"
+            } finally {
+                detailLoading.value = false
+            }
+        }
+    }
+
+    fun search(text: String) {
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            searching.value = true
+            try {
+                searchResults.value = withContext(Dispatchers.IO) { api.search(text) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error.value = e.message ?: "Search failed"
+            } finally {
+                searching.value = false
+            }
+        }
+    }
+
+    fun clearSearch() {
+        searchJob?.cancel()
+        searchResults.value = null
+        searching.value = false
+    }
+
+    fun addSeed(s: Station, hit: SearchHit) =
+        manage("Couldn't add that music", { api.addSeed(s.token, hit.token) }) { loadDetail(s) }
+
+    fun removeSeed(s: Station, seed: Seed) =
+        manage("Couldn't remove that music", { api.removeSeed(seed.id) }) { loadDetail(s) }
+
+    fun renameStation(s: Station, name: String) =
+        manage("Couldn't rename the station", { api.renameStation(s.token, name) }) {
+            reloadStations {
+                val current = station.value ?: return@reloadStations
+                stations.value.firstOrNull { it.token == current.token }?.let { station.value = it }
+            }
+        }
+
+    fun deleteStation(s: Station) =
+        manage("Couldn't delete the station", { api.deleteStation(s.token) }) {
+            if (station.value?.token == s.token) {
+                stopPlayback()
+                station.value = null
+                Prefs.saveLastStation(null)
+            }
+            if (s.token in Prefs.pinned) Prefs.togglePin(s.token)
+            reloadStations()
+        }
+
+    /** Creates a station from a search result (an artist, song or genre). */
+    fun createStation(hit: SearchHit, onDone: () -> Unit) =
+        manage("Couldn't create that station", { api.createStation(hit.token) }) {
+            reloadStations()
+            onDone()
+        }
+
+    /** Runs [work] off the main thread, then [after] on it; failures show in the error banner. */
+    private fun manage(failure: String, work: () -> Unit, after: () -> Unit = {}) {
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { work() }
+                after()
+            } catch (e: Exception) {
+                error.value = e.message ?: failure
+            }
+        }
+    }
+
+    private fun reloadStations(then: () -> Unit = {}) {
+        scope.launch {
+            try {
+                stations.value = withContext(Dispatchers.IO) { api.getStations() }
+                then()
+            } catch (e: Exception) {
+                error.value = e.message ?: "Couldn't refresh your stations"
             }
         }
     }
@@ -414,6 +606,9 @@ object Radio {
             it.copy(artUrls = art, stationToken = stationToken)
         }
         withArt.forEach { tracks[it.id] = it }
+        // Pandora marks songs you've already thumbed up; show them as loved.
+        val alreadyLoved = withArt.filter { it.rating > 0 && it.ratingKey !in loved.value }
+        if (alreadyLoved.isNotEmpty()) loved.value = loved.value + alreadyLoved.associate { it.ratingKey to "" }
         player.addMediaItems(withArt.map(::mediaItem))
         publishQueue()
     }

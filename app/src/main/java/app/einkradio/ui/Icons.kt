@@ -22,6 +22,7 @@ object AppIcons {
         "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 " +
             "1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z",
     )
+    val Close = icon("M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z")
     val Shuffle = icon(
         "M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 " +
             "20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z",
@@ -44,6 +45,23 @@ object AppIcons {
             PathParser().parsePathString("M128 372 a62 62 0 1 0 124 0 a62 62 0 1 0 -124 0 Z").toNodes(),
             fill = SolidColor(Color.White),
         )
+        clearGroup()
+    }.build()
+
+    private const val LOGO_P =
+        "M214 100 H300 C390 100 432 150 432 215 C432 280 390 330 300 330 H266 V352 H214 Z " +
+            "M266 156 H298 C340 156 372 180 372 215 C372 250 340 274 298 274 H266 Z"
+    private const val LOGO_NOTE = "M128 372 a62 62 0 1 0 124 0 a62 62 0 1 0 -124 0 Z"
+
+    /** The two halves of [Logo], so the splash can bring them in one after the other. */
+    val LogoP: ImageVector = logoPart(LOGO_P, PathFillType.EvenOdd)
+    val LogoNote: ImageVector = logoPart(LOGO_NOTE, PathFillType.NonZero)
+
+    private fun logoPart(path: String, fillType: PathFillType): ImageVector = ImageVector.Builder(
+        defaultWidth = 512.dp, defaultHeight = 512.dp, viewportWidth = 512f, viewportHeight = 512f,
+    ).apply {
+        addGroup(translationX = 14f, translationY = 8f)
+        addPath(PathParser().parsePathString(path).toNodes(), pathFillType = fillType, fill = SolidColor(Color.White))
         clearGroup()
     }.build()
 
