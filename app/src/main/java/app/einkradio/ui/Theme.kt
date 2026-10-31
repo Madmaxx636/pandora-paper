@@ -2,6 +2,7 @@ package app.einkradio.ui
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -90,7 +91,11 @@ fun AppTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalDensity provides Density(base.density, base.fontScale * Prefs.textScale),
     ) {
-        MaterialTheme(colorScheme = colors, content = content)
+        MaterialTheme(colorScheme = colors) {
+            // Text and icons that don't set a colour use this. Left alone it is plain black, which
+            // disappears on the Black theme and on a dark Color theme.
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, content = content)
+        }
     }
 }
 
