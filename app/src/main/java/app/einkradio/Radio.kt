@@ -355,9 +355,22 @@ object Radio {
         }
     }
 
-    /** Starts the current song again from the beginning. */
+    /**
+     * Plays the song that played just before this one, once, and then carries on with the station. Only
+     * the most recent earlier song is replayed. With nothing played yet, it restarts the current song.
+     * The song that was playing counts as played, so pressing it again goes back to that one.
+     */
     fun replay() {
-        if (player.currentMediaItem != null) player.seekTo(0)
+        if (player.currentMediaItem == null) return
+        val last = history.value.firstOrNull()
+        if (last == null) {
+            player.seekTo(0)
+            return
+        }
+        tracks[last.id] = last // the queue only knows songs that are in this map
+        player.addMediaItem(player.currentMediaItemIndex + 1, mediaItem(last))
+        player.seekToNextMediaItem()
+        player.play()
     }
 
     fun togglePlay() {
