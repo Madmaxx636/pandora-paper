@@ -1,5 +1,6 @@
 package app.einkradio
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -45,7 +46,10 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(RadioNotificationProvider(this).apply { setSmallIcon(R.drawable.ic_stat_radio) })
-        val librarySession = MediaLibrarySession.Builder(this, RadioPlayer(Radio.player), LibraryCallback()).build()
+        val librarySession = MediaLibrarySession.Builder(this, RadioPlayer(Radio.player), LibraryCallback())
+            // What tapping the notification (and a launcher's now-playing bar) opens.
+            .setSessionActivity(openPlayerIntent())
+            .build()
         session = librarySession
 
         // Keep the Like button's state in step with the playing song.
@@ -264,6 +268,16 @@ class PlaybackService : MediaLibraryService() {
      * Replay first, then Dislike and Like. The car puts the first extra button beside play/skip and the
      * rest together on the right, which is how the official app's controls are arranged.
      */
+    /** Opens the app on its Playing tab. */
+    private fun openPlayerIntent(): PendingIntent = PendingIntent.getActivity(
+        this,
+        0,
+        Intent(this, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_OPEN_PLAYING, true)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
     private fun buttons(liked: Boolean): ImmutableList<CommandButton> = ImmutableList.of(
         CommandButton.Builder()
             .setDisplayName("Replay earlier song")

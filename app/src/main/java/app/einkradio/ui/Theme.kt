@@ -89,7 +89,12 @@ fun AppTheme(content: @Composable () -> Unit) {
 
     val base = LocalDensity.current
     CompositionLocalProvider(
-        LocalDensity provides Density(base.density, base.fontScale * Prefs.textScale),
+        // Density scales both dp and sp, so the font scale is divided by the interface scale to leave the
+        // text size to its own setting.
+        LocalDensity provides Density(
+            density = base.density * Prefs.uiScale,
+            fontScale = base.fontScale * Prefs.textScale / Prefs.uiScale,
+        ),
     ) {
         MaterialTheme(colorScheme = colors) {
             // Text and icons that don't set a colour use this. Left alone it is plain black, which

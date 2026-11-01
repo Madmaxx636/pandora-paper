@@ -78,6 +78,9 @@ object Radio {
 
     val loggedIn = MutableStateFlow(false)
 
+    /** Goes up each time something (the notification) asks the screen to show the Playing tab. */
+    val openPlayingRequests = MutableStateFlow(0)
+
     /** True from launch until the saved login has succeeded or failed; the UI shows the splash meanwhile. */
     val restoring = MutableStateFlow(false)
 

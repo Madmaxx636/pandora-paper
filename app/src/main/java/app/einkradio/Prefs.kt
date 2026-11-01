@@ -12,7 +12,14 @@ import androidx.security.crypto.MasterKey
 
 /** UI settings (observable from Compose) plus the saved login. */
 object Prefs {
-    val TEXT_SCALES = floatArrayOf(1.0f, 1.25f, 1.5f)
+    // Text and interface sizes are percentages, changed in steps of 5.
+    const val SCALE_STEP = 5
+    const val TEXT_SCALE_MIN = 80
+    const val TEXT_SCALE_MAX = 200
+    const val TEXT_SCALE_DEFAULT = 125
+    const val UI_SCALE_MIN = 70
+    const val UI_SCALE_MAX = 160
+    const val UI_SCALE_DEFAULT = 100
     val PROGRESS_LABELS = arrayOf("Hidden", "Every 15 s", "Every 5 s")
 
     private lateinit var settings: SharedPreferences
@@ -90,12 +97,18 @@ object Prefs {
     /** Tokens of pinned stations; stale tokens for deleted stations are harmless. */
     var pinned by mutableStateOf(emptySet<String>())
         private set
-    var textScaleIndex by mutableIntStateOf(1)
+    /** How big the words are, as a percentage. */
+    var textScalePct by mutableIntStateOf(TEXT_SCALE_DEFAULT)
+        private set
+
+    /** How big buttons, icons and spacing are, as a percentage. Text keeps its own size. */
+    var uiScalePct by mutableIntStateOf(UI_SCALE_DEFAULT)
         private set
     var progressMode by mutableIntStateOf(1)
         private set
 
-    val textScale: Float get() = TEXT_SCALES[textScaleIndex]
+    val textScale: Float get() = textScalePct / 100f
+    val uiScale: Float get() = uiScalePct / 100f
 
     fun init(context: Context) {
         settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -123,7 +136,10 @@ object Prefs {
         resumeLast = settings.getBoolean("resume_last", true)
         autoUpdate = settings.getBoolean("auto_update", true)
         carStartTab = settings.getInt("car_start_tab", 0).coerceIn(CAR_TAB_LABELS.indices)
-        textScaleIndex = settings.getInt("text_scale", 1).coerceIn(TEXT_SCALES.indices)
+        // Older builds had three text sizes stored as an index (100, 125 or 150%).
+        val legacyText = intArrayOf(100, 125, 150)[settings.getInt("text_scale", 1).coerceIn(0, 2)]
+        textScalePct = settings.getInt("text_pct", legacyText).coerceIn(TEXT_SCALE_MIN, TEXT_SCALE_MAX)
+        uiScalePct = settings.getInt("ui_pct", UI_SCALE_DEFAULT).coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
         progressMode = settings.getInt("progress", 1).coerceIn(PROGRESS_LABELS.indices)
     }
 
@@ -199,9 +215,21 @@ object Prefs {
 
     fun toggleSort() { sortAz = !sortAz; settings.edit().putBoolean("sort_az", sortAz).apply() }
 
-    fun cycleTextScale() {
-        textScaleIndex = (textScaleIndex + 1) % TEXT_SCALES.size
-        settings.edit().putInt("text_scale", textScaleIndex).apply()
+    /** Moves the text size by [steps] steps of 5%, staying within the allowed range. */
+    fun stepTextScale(steps: Int) {
+        textScalePct = (textScalePct + steps * SCALE_STEP).coerceIn(TEXT_SCALE_MIN, TEXT_SCALE_MAX)
+        settings.edit().putInt("text_pct", textScalePct).apply()
+    }
+
+    fun stepUiScale(steps: Int) {
+        uiScalePct = (uiScalePct + steps * SCALE_STEP).coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+        settings.edit().putInt("ui_pct", uiScalePct).apply()
+    }
+
+    fun resetScales() {
+        textScalePct = TEXT_SCALE_DEFAULT
+        uiScalePct = UI_SCALE_DEFAULT
+        settings.edit().putInt("text_pct", textScalePct).putInt("ui_pct", uiScalePct).apply()
     }
 
     fun cycleProgress() {

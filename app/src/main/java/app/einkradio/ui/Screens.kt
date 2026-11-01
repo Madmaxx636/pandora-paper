@@ -890,10 +890,37 @@ fun SettingsScreen() {
 private fun AppearanceSettings() {
     SettingRow("Theme", Prefs.THEME_LABELS[Prefs.theme]) { Prefs.cycleTheme() }
     SettingRow("Album art", if (Prefs.showArt) "Shown" else "Hidden") { Prefs.toggleArt() }
-    SettingRow("Text size", "${(Prefs.textScale * 100).toInt()}%") { Prefs.cycleTextScale() }
+    SizeRow("Text size", Prefs.textScalePct) { Prefs.stepTextScale(it) }
+    SizeRow("Interface size", Prefs.uiScalePct) { Prefs.stepUiScale(it) }
+    Btn("Reset sizes", Modifier.fillMaxWidth().padding(top = 8.dp), compact = true) { Prefs.resetScales() }
     SettingRow("Paged lists", if (Prefs.pagedLists) "On" else "Off") { Prefs.togglePaged() }
     SettingRow("Progress updates", Prefs.PROGRESS_LABELS[Prefs.progressMode]) { Prefs.cycleProgress() }
-    Hint("Paged lists and slower progress updates mainly help e-ink screens. Progress updates apply to the White and Black themes.")
+    Hint(
+        "Text size changes the words; Interface size changes buttons, icons and spacing. Both go up and down " +
+            "in steps of 5% and apply straight away. Paged lists and slower progress updates mainly help e-ink " +
+            "screens, and progress updates apply to the White and Black themes.",
+    )
+}
+
+/** A label with minus and plus buttons around the current percentage. */
+@Composable
+private fun SizeRow(label: String, percent: Int, onStep: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f))
+        Btn("−", Modifier.width(52.dp), compact = true) { onStep(-1) }
+        Text(
+            "$percent%",
+            Modifier.width(68.dp),
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Btn("+", Modifier.width(52.dp), compact = true) { onStep(1) }
+    }
+    Divider()
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package app.einkradio
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,8 +45,23 @@ class MainActivity : ComponentActivity() {
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYING, false) == true) Radio.openPlayingRequests.value += 1
+    }
+
+    // The app is already open when the notification is tapped, so the request arrives here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    companion object {
+        const val EXTRA_OPEN_PLAYING = "open_playing"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         // Only on a fresh launch, not when the screen is recreated (e.g. rotation).
         if (savedInstanceState == null) {
@@ -71,6 +88,16 @@ private fun Root() {
     // Open on Playing when a station is about to be resumed.
     var tab by rememberSaveable {
         mutableIntStateOf(if (Prefs.resumeLast && Prefs.lastStation != null) TAB_PLAYING else TAB_STATIONS)
+    }
+
+    // Tapping the notification asks for the Playing tab; each request is handled once.
+    val openRequests by Radio.openPlayingRequests.collectAsState()
+    var handledRequests by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(openRequests) {
+        if (openRequests > handledRequests) {
+            tab = TAB_PLAYING
+            handledRequests = openRequests
+        }
     }
 
     Column(
