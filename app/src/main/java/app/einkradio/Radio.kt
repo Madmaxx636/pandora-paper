@@ -694,7 +694,7 @@ object Radio {
                 MediaMetadata.Builder()
                     .setTitle(t.title)
                     .setArtist(byline)
-                    .setArtworkUri((t.artUrl ?: t.artUrls.lastOrNull())?.let(android.net.Uri::parse))
+                    .setArtworkUri((t.artUrl ?: t.artUrls.firstOrNull())?.let(android.net.Uri::parse))
                     .build(),
             )
             .build()

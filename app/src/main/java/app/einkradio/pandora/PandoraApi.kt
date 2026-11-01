@@ -146,7 +146,7 @@ class PandoraApi {
         }
         val items = call("station.getPlaylist", JSONObject().put("stationToken", station.token))
             .getJSONArray("items")
-        (0 until items.length()).mapNotNull { i ->
+        val tracks = (0 until items.length()).mapNotNull { i ->
             val o = items.getJSONObject(i)
             // Only entries that carry an audio stream are playable tracks.
             val urls = o.optJSONObject("audioUrlMap") ?: return@mapNotNull null
@@ -165,6 +165,19 @@ class PandoraApi {
                 rating = o.optInt("songRating"),
             )
         }
+        fillMissingArt(tracks)
+    }
+
+    /** Looks up art for songs Pandora gave none, all at once so the wait is one lookup long. */
+    private fun fillMissingArt(tracks: List<Track>): List<Track> {
+        val missing = tracks.filter { it.artUrls.isEmpty() }
+        if (missing.isEmpty()) return tracks
+        val found = missing.map { t -> java.util.concurrent.Callable { ArtLookup.find(t.artist, t.title) } }
+            .let { jobs -> java.util.concurrent.Executors.newFixedThreadPool(jobs.size).let { pool ->
+                try { pool.invokeAll(jobs).map { runCatching { it.get() }.getOrNull() } } finally { pool.shutdown() }
+            } }
+        val byId = missing.zip(found).associate { (t, url) -> t.id to url }
+        return tracks.map { t -> byId[t.id]?.let { t.copy(artUrl = it, artUrls = listOf(it)) } ?: t }
     }
 
     fun getStationDetail(stationToken: String): StationDetail = authed {
@@ -292,7 +305,7 @@ class PandoraApi {
         }
         item.optString("albumArtUrl").takeIf { it.isNotEmpty() }?.let { base ->
             // The same image is served at several sizes; the large one may not exist, so keep the original.
-            urls.add(base.replace(ART_SIZE, "_500W_500H"))
+            listOf("_1080W_1080H", "_500W_500H", "_300W_300H", "_130W_130H").forEach { urls.add(base.replace(ART_SIZE, it)) }
             urls.add(base)
         }
         return urls.distinct()
