@@ -17,6 +17,17 @@ internal object ArtLookup {
         .readTimeout(4, TimeUnit.SECONDS)
         .build()
 
+    /** The first of [urls] that serves an image, or null if none does. */
+    fun working(urls: List<String>): String? = urls.firstOrNull { url ->
+        try {
+            http.newCall(Request.Builder().url(url).head().build()).execute().use {
+                it.isSuccessful && it.header("Content-Type")?.startsWith("image") != false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun find(artist: String, title: String): String? = try {
         val url = "https://itunes.apple.com/search".toHttpUrl().newBuilder()
             .addQueryParameter("term", "$artist $title")

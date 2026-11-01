@@ -168,16 +168,19 @@ class PandoraApi {
         fillMissingArt(tracks)
     }
 
-    /** Looks up art for songs Pandora gave none, all at once so the wait is one lookup long. */
+    /**
+     * Makes sure each song has a cover that really loads. Pandora's art links are sometimes dead, so the
+     * candidates are tried in turn (all songs at once) and, if none works or there are none, the cover is
+     * looked up by artist and title. Songs where nothing works keep their list and fall back to station art.
+     */
     private fun fillMissingArt(tracks: List<Track>): List<Track> {
-        val missing = tracks.filter { it.artUrls.isEmpty() }
-        if (missing.isEmpty()) return tracks
-        val found = missing.map { t -> java.util.concurrent.Callable { ArtLookup.find(t.artist, t.title) } }
-            .let { jobs -> java.util.concurrent.Executors.newFixedThreadPool(jobs.size).let { pool ->
-                try { pool.invokeAll(jobs).map { runCatching { it.get() }.getOrNull() } } finally { pool.shutdown() }
-            } }
-        val byId = missing.zip(found).associate { (t, url) -> t.id to url }
-        return tracks.map { t -> byId[t.id]?.let { t.copy(artUrl = it, artUrls = listOf(it)) } ?: t }
+        if (tracks.isEmpty()) return tracks
+        val jobs = tracks.map { t -> java.util.concurrent.Callable { ArtLookup.working(t.artUrls) ?: ArtLookup.find(t.artist, t.title) } }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(jobs.size)
+        val found = try { pool.invokeAll(jobs).map { runCatching { it.get() }.getOrNull() } } finally { pool.shutdown() }
+        return tracks.zip(found).map { (t, url) ->
+            if (url == null) t else t.copy(artUrl = url, artUrls = listOf(url) + t.artUrls.filter { it != url })
+        }
     }
 
     fun getStationDetail(stationToken: String): StationDetail = authed {

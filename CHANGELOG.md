@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.9
+- Every song's cover is now checked to actually load. If Pandora's art link is dead, the cover is looked up by artist and title; the station art is used only if that finds nothing too. This fixes songs that still showed the station art in 1.0.8.
+
 ## 1.0.8
 - Songs that Pandora sends without cover art now get one looked up by artist and title (Apple's public iTunes Search; only the artist and title are sent). The station's art is used only if no cover is found.
 - Cover images try more sizes of Pandora's own image (1080, 500, 300 and 130 pixels) before falling back.
