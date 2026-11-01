@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 object Radio {
     private const val REFILL_WHEN_REMAINING = 2
     private const val HISTORY_LIMIT = 50
+    private const val REPLAY_PREFIX = "replay:"
     private const val WIFI_ONLY_MESSAGE = "Wi-Fi only is on and this connection is metered."
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -50,6 +51,12 @@ object Radio {
     private val tracks = HashMap<String, Track>()
     private var refilling = false
     private var resumePending = false
+
+    // The walk back that Replay does through the history: the history when it started, how far along it
+    // is, and a counter so each replayed copy gets its own id. Null means no walk is in progress.
+    private var replaySource: List<Track>? = null
+    private var replayPos = 0
+    private var replayCount = 0
 
     private lateinit var appContext: Context
     private var batteryJob: Job? = null
@@ -132,9 +139,13 @@ object Radio {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val previous = track.value
                 val next = mediaItem?.let { tracks[it.mediaId] }
-                if (previous != null && previous.id != next?.id) {
+                val previousWasReplay = previous?.id?.startsWith(REPLAY_PREFIX) == true
+                // A replayed copy isn't added to the history, or going back would loop over the same songs.
+                if (previous != null && !previousWasReplay && previous.id != next?.id) {
                     history.value = (listOf(previous) + history.value).take(HISTORY_LIMIT)
                 }
+                // Moving off a replayed song to anything but another replay ends the walk back.
+                if (previousWasReplay && next?.id?.startsWith(REPLAY_PREFIX) != true) replaySource = null
                 track.value = next
                 publishQueue()
                 // Songs already played stay in the queue otherwise, and "previous" would go back to them.
@@ -356,19 +367,31 @@ object Radio {
     }
 
     /**
-     * Plays the song that played just before this one, once, and then carries on with the station. Only
-     * the most recent earlier song is replayed. With nothing played yet, it restarts the current song.
-     * The song that was playing counts as played, so pressing it again goes back to that one.
+     * Goes back one song at a time. The first press plays the song that played just before this one, the
+     * next press the one before that, and so on, so four presses reach the fourth song back. When the
+     * replayed song ends (or is skipped) the station carries on with the up next queue as it was; the
+     * songs stepped back over aren't played again. With nothing played yet, it restarts the current song.
      */
     fun replay() {
         if (player.currentMediaItem == null) return
-        val last = history.value.firstOrNull()
-        if (last == null) {
+        val source = replaySource ?: history.value.also {
+            replaySource = it // the history as it was when the walk back started
+            replayPos = 0
+        }
+        if (source.isEmpty()) {
+            replaySource = null
             player.seekTo(0)
             return
         }
-        tracks[last.id] = last // the queue only knows songs that are in this map
-        player.addMediaItem(player.currentMediaItemIndex + 1, mediaItem(last))
+        if (replayPos >= source.size) {
+            error.value = "No earlier songs to replay"
+            return
+        }
+        val target = source[replayPos++]
+        // A copy with its own id, so the queue treats it as a new item and the history can tell it apart.
+        val copy = target.copy(id = "$REPLAY_PREFIX${replayCount++}:${target.id}")
+        tracks[copy.id] = copy
+        player.addMediaItem(player.currentMediaItemIndex + 1, mediaItem(copy))
         player.seekToNextMediaItem()
         player.play()
     }

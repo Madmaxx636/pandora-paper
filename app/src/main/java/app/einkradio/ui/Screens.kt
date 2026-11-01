@@ -349,7 +349,7 @@ fun NowPlayingScreen() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RoundButton(AppIcons.ThumbUp, "Ban song", 56.dp, 26.dp, rotate = 180f) { Radio.ban() }
-                RoundButton(AppIcons.Replay, "Replay last song", 56.dp, 26.dp) { Radio.replay() }
+                RoundButton(AppIcons.Replay, "Replay earlier song", 56.dp, 26.dp) { Radio.replay() }
                 RoundButton(
                     if (playing) AppIcons.Pause else AppIcons.Play,
                     if (playing) "Pause" else "Play",

@@ -266,7 +266,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun buttons(liked: Boolean): ImmutableList<CommandButton> = ImmutableList.of(
         CommandButton.Builder()
-            .setDisplayName("Replay last song")
+            .setDisplayName("Replay earlier song")
             .setIconResId(R.drawable.ic_replay)
             .setSessionCommand(REPLAY_COMMAND)
             .build(),

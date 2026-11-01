@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,6 +51,9 @@ class MainActivity : ComponentActivity() {
             Radio.resumeLastStation()
             Updater.check(applicationContext, auto = true)
         }
+        // Draw behind the status and navigation bars. Without this the status bar is the theme's default
+        // black, and the White theme's dark icons vanish on it. The app already pads for the bars.
+        enableEdgeToEdge()
         setContent { AppTheme { Root() } }
     }
 }
