@@ -9,6 +9,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import app.einkradio.pandora.Track
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** UI settings (observable from Compose) plus the saved login. */
 object Prefs {
@@ -59,6 +62,14 @@ object Prefs {
 
     var largeBuffer by mutableStateOf(false)
         private set
+
+    /** Volume boost: extra gain on top of full volume, in decibels. Too much distorts loud songs. */
+    val BOOST_LABELS = arrayOf("Off", "+3 dB", "+6 dB", "+9 dB")
+    private val BOOST_DB = intArrayOf(0, 3, 6, 9)
+    var boost by mutableIntStateOf(0)
+        private set
+    val boostDb: Int get() = BOOST_DB[boost]
+
     var batteryStop by mutableIntStateOf(0)
         private set
     var pauseStop by mutableIntStateOf(0)
@@ -128,6 +139,7 @@ object Prefs {
         quality = settings.getInt("quality", 0).coerceIn(QUALITY_LABELS.indices)
         cellular = settings.getInt("cellular", 0).coerceIn(CELLULAR_LABELS.indices)
         largeBuffer = settings.getBoolean("large_buffer", false)
+        boost = settings.getInt("boost", 0).coerceIn(BOOST_LABELS.indices)
         batteryStop = settings.getInt("battery_stop", 0).coerceIn(BATTERY_LABELS.indices)
         pauseStop = settings.getInt("pause_stop", 0).coerceIn(PAUSE_STOP_LABELS.indices)
         keepOnClose = settings.getBoolean("keep_on_close", true)
@@ -161,6 +173,11 @@ object Prefs {
         settings.edit().putInt("cellular", cellular).apply()
     }
 
+    fun cycleBoost() {
+        boost = (boost + 1) % BOOST_LABELS.size
+        settings.edit().putInt("boost", boost).apply()
+    }
+
     fun toggleLargeBuffer() { largeBuffer = !largeBuffer; settings.edit().putBoolean("large_buffer", largeBuffer).apply() }
 
     fun cycleBatteryStop() {
@@ -188,6 +205,44 @@ object Prefs {
 
     fun saveUpdateCheck(time: Long) {
         settings.edit().putLong("last_update_check", time).apply()
+    }
+
+    /**
+     * The play history, newest first, kept between launches. Stream links expire, so they aren't saved:
+     * a song restored from here can be listed and rated but not replayed.
+     */
+    fun loadHistory(): List<Track> = try {
+        val array = JSONArray(settings.getString("history", "[]"))
+        (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            val art = o.optJSONArray("arts")
+            Track(
+                id = o.getString("id"),
+                title = o.optString("title"),
+                artist = o.optString("artist"),
+                album = o.optString("album"),
+                artUrl = o.optString("art").takeIf { it.isNotEmpty() },
+                artUrls = art?.let { a -> (0 until a.length()).map(a::getString) } ?: emptyList(),
+                audioUrl = "",
+                stationToken = o.optString("station").takeIf { it.isNotEmpty() },
+                rating = o.optInt("rating"),
+            )
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun saveHistory(tracks: List<Track>) {
+        val array = JSONArray()
+        tracks.forEach { t ->
+            array.put(
+                JSONObject()
+                    .put("id", t.id).put("title", t.title).put("artist", t.artist).put("album", t.album)
+                    .put("art", t.artUrl ?: "").put("arts", JSONArray(t.artUrls))
+                    .put("station", t.stationToken ?: "").put("rating", t.rating),
+            )
+        }
+        settings.edit().putString("history", array.toString()).apply()
     }
 
     /** Tokens of the stations played most recently, newest first. */

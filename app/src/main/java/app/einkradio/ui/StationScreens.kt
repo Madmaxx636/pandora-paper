@@ -259,7 +259,7 @@ private fun SearchPanel(actionLabel: String, onPick: (SearchHit) -> Unit) {
             onValueChange = { query = it },
             placeholder = { Text("Search artists, songs, genres…") },
             singleLine = true,
-            shape = RoundedCornerShape(if (Prefs.eink) 6.dp else 28.dp),
+            shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))

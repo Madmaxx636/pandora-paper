@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
@@ -85,7 +87,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 
-private val CoverRadius = 12.dp
+private val CoverRadius = 16.dp
 
 // ---------------------------------------------------------------------------------------------
 // Shared pieces
@@ -109,7 +111,7 @@ fun Btn(
 ) {
     val cs = MaterialTheme.colorScheme
     val eink = Prefs.eink
-    val shape = RoundedCornerShape(if (eink) 6.dp else 28.dp)
+    val shape = RoundedCornerShape(28.dp)
     val container = when {
         selected -> cs.primary
         eink -> cs.background
@@ -118,7 +120,7 @@ fun Btn(
     val content = if (selected) cs.onPrimary else cs.onBackground
     Box(
         modifier
-            .heightIn(min = if (compact) 44.dp else 56.dp)
+            .heightIn(min = if (compact) 48.dp else 56.dp)
             .background(container, shape)
             .then(if (eink) Modifier.border(2.dp, cs.onBackground, shape) else Modifier)
             .then(plainClick(onClick))
@@ -227,7 +229,7 @@ fun LoginScreen() {
     var user by rememberSaveable { mutableStateOf("") }
     var pass by rememberSaveable { mutableStateOf("") }
     val busy by Radio.busy.collectAsState()
-    val fieldShape = RoundedCornerShape(if (Prefs.eink) 6.dp else 28.dp)
+    val fieldShape = RoundedCornerShape(28.dp)
 
     Column(
         Modifier.fillMaxSize(),
@@ -743,7 +745,7 @@ fun StationsScreen(onPicked: () -> Unit) {
                     onValueChange = { query = it },
                     placeholder = { Text("Search stations…") },
                     singleLine = true,
-                    shape = RoundedCornerShape(if (Prefs.eink) 6.dp else 28.dp),
+                    shape = RoundedCornerShape(28.dp),
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -855,7 +857,7 @@ private fun PagedStations(
 // ---------------------------------------------------------------------------------------------
 
 private val SETTINGS_PAGES = listOf(
-    "Appearance", "Audio quality", "Power saving", "Background playback", "Liked & disliked songs", "Updates", "Android Auto",
+    "Appearance", "Audio", "Power saving", "Background playback", "Liked & disliked songs", "Android Auto", "About",
 )
 private val SLEEP_OPTIONS = intArrayOf(0, 15, 30, 45, 60, 90)
 
@@ -868,8 +870,6 @@ fun SettingsScreen() {
             SETTINGS_PAGES.forEachIndexed { i, title -> NavRow(title) { page = i } }
             Spacer(Modifier.weight(1f))
             Btn("Quit app", Modifier.fillMaxWidth()) { quitApp(context) }
-            Spacer(Modifier.height(8.dp))
-            Btn("Sign out", Modifier.fillMaxWidth()) { Radio.signOut() }
         } else {
             Btn("‹  ${SETTINGS_PAGES[page]}", Modifier.fillMaxWidth(), compact = true) { page = -1 }
             Spacer(Modifier.height(8.dp))
@@ -878,8 +878,8 @@ fun SettingsScreen() {
                 1 -> QualitySettings()
                 2 -> PowerSettings()
                 3 -> BackgroundSettings()
-                5 -> UpdatesSettings()
-                6 -> CarSettings()
+                5 -> CarSettings()
+                6 -> AboutSettings()
                 else -> Box(Modifier.weight(1f)) { LibraryScreen() }
             }
         }
@@ -927,9 +927,15 @@ private fun SizeRow(label: String, percent: Int, onStep: (Int) -> Unit) {
 private fun QualitySettings() {
     SettingRow("Stream quality", Prefs.QUALITY_LABELS[Prefs.quality]) { Prefs.cycleQuality() }
     SettingRow("On mobile data", Prefs.CELLULAR_LABELS[Prefs.cellular]) { Prefs.cycleCellular() }
+    SettingRow("Volume boost", Prefs.BOOST_LABELS[Prefs.boost]) {
+        Prefs.cycleBoost()
+        Radio.applyBoost()
+    }
     Hint(
-        "Changes apply to songs loaded from now on. If a quality isn't offered for your account, " +
-            "the next best one is used. Wi-Fi only stops stations from starting on a metered connection.",
+        "Quality changes apply to songs loaded from now on. If a quality isn't offered for your account, " +
+            "the next best one is used. Wi-Fi only stops stations from starting on a metered connection. " +
+            "Volume boost adds gain on top of full volume for quiet songs or speakers; loud songs can distort " +
+            "at the higher settings, so use the lowest that sounds right.",
     )
 }
 
@@ -1000,13 +1006,30 @@ private fun CarSettings() {
 }
 
 @Composable
-private fun UpdatesSettings() {
+private fun AboutSettings() {
     val context = LocalContext.current
     val state by Updater.state.collectAsState()
     val installed = remember { Updater.installedVersion(context) }
+    val user = remember { Prefs.savedLogin()?.first }
 
-    SettingRow("Installed version", installed) {}
-    SettingRow("Check automatically", if (Prefs.autoUpdate) "On" else "Off") { Prefs.toggleAutoUpdate() }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Text("Paper for Pandora", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Text(
+        "An unofficial, e-ink-friendly Pandora client. Not affiliated with or endorsed by Pandora. It uses " +
+            "Pandora's unofficial API, which can stop working at any time, and it does not block ads or " +
+            "skip limits.",
+        style = MaterialTheme.typography.bodySmall,
+        color = mutedColor(),
+        modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+    )
+    SettingRow("Version", installed) {}
+    if (user != null) SettingRow("Signed in as", user) {}
+    SettingRow("Source", "github.com/Madmaxx636/pandora-paper") {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Madmaxx636/pandora-paper")),
+        )
+    }
+    SettingRow("Check for updates automatically", if (Prefs.autoUpdate) "On" else "Off") { Prefs.toggleAutoUpdate() }
     Spacer(Modifier.height(12.dp))
 
     when (val s = state) {
@@ -1031,12 +1054,18 @@ private fun UpdatesSettings() {
         Updater.State.Idle -> Unit
     }
     Spacer(Modifier.height(12.dp))
-    Btn("Check now", Modifier.fillMaxWidth()) { Updater.check(context) }
+    Btn("Check for updates now", Modifier.fillMaxWidth()) { Updater.check(context) }
     Hint(
         "Updates come from this app's releases on GitHub. Automatic checks run at most once a day, only on " +
             "an unmetered connection, and never install anything by themselves: Android asks you to confirm " +
             "each install. An update must be signed with the same key as the installed app.",
     )
+    Spacer(Modifier.height(16.dp))
+    Btn("Clear play history", Modifier.fillMaxWidth()) { Radio.clearHistory() }
+    Spacer(Modifier.height(8.dp))
+    Btn("Sign out", Modifier.fillMaxWidth()) { Radio.signOut() }
+    Hint("Signing out also clears the saved play history on this device.")
+    }
 }
 
 /** Shown at the top of the app when a newer release exists, and while it downloads. */
@@ -1046,7 +1075,7 @@ fun UpdateBanner() {
     val state by Updater.state.collectAsState()
     val dismissed by Updater.dismissed.collectAsState()
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(22.dp)
 
     val release = (state as? Updater.State.Available)?.release
     val downloading = state as? Updater.State.Downloading
@@ -1217,7 +1246,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
     val playing by Radio.isPlaying.collectAsState()
     val t = track ?: return
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(28.dp)
 
     Row(
         Modifier
@@ -1231,7 +1260,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (Prefs.showArt) {
-            Cover(t.artUrls, Modifier.size(44.dp), radius = 6.dp)
+            Cover(t.artUrls, Modifier.size(44.dp), radius = 14.dp)
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
@@ -1251,37 +1280,38 @@ fun MiniPlayer(onOpen: () -> Unit) {
 fun NavBar(selected: Int, labels: List<String>, onSelect: (Int) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val eink = Prefs.eink
-    Column(Modifier.fillMaxWidth()) {
-        if (eink) HorizontalDivider(thickness = 2.dp, color = cs.onBackground)
-        else HorizontalDivider(color = cs.onBackground.copy(alpha = 0.12f))
-        Row(Modifier.fillMaxWidth()) {
-            labels.forEachIndexed { i, label ->
-                val on = i == selected
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .background(if (on && eink) cs.onBackground else Color.Transparent)
-                        .then(plainClick { onSelect(i) }),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .background(if (on && !eink) cs.primary else Color.Transparent),
+    val shape = RoundedCornerShape(28.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        labels.forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 52.dp)
+                    .clip(shape)
+                    .background(
+                        when {
+                            on && eink -> cs.onBackground
+                            on -> cs.primary.copy(alpha = 0.16f)
+                            else -> Color.Transparent
+                        },
                     )
-                    Box(Modifier.heightIn(min = 52.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            label,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                            color = when {
-                                on && eink -> cs.background
-                                on -> cs.primary
-                                else -> mutedColor()
-                            },
-                        )
-                    }
-                }
+                    .then(if (eink) Modifier.border(2.dp, cs.onBackground, shape) else Modifier)
+                    .then(plainClick { onSelect(i) }),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = when {
+                        on && eink -> cs.background
+                        on -> cs.primary
+                        else -> mutedColor()
+                    },
+                )
             }
         }
     }

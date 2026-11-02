@@ -139,7 +139,7 @@ private fun ErrorBanner() {
     val error by Radio.error.collectAsState()
     val message = error ?: return
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(22.dp)
     Text(
         "$message  (tap to dismiss)",
         color = cs.onBackground,

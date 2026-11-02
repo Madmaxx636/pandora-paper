@@ -42,7 +42,7 @@ import kotlinx.coroutines.withContext
 /** Process-wide player and Pandora session; the UI and [PlaybackService] both use it. */
 object Radio {
     private const val REFILL_WHEN_REMAINING = 2
-    private const val HISTORY_LIMIT = 50
+    private const val HISTORY_LIMIT = 200
     private const val REPLAY_PREFIX = "replay:"
     private const val WIFI_ONLY_MESSAGE = "Wi-Fi only is on and this connection is metered."
 
@@ -111,7 +111,7 @@ object Radio {
     val searchResults = MutableStateFlow<SearchResults?>(null)
     val searching = MutableStateFlow(false)
 
-    /** Songs already played this session, most recent first. */
+    /** Songs already played, most recent first. Kept between launches. */
     val history = MutableStateFlow<List<Track>>(emptyList())
 
     /** Sleep timer length in minutes (0 = off) and the wall-clock time it fires. */
@@ -120,6 +120,7 @@ object Radio {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        history.value = Prefs.loadHistory()
 
         // A bigger buffer downloads more of each song in one go, so the radio can sleep longer.
         // The buffer size is fixed when the player is built, so changing it needs a restart.
@@ -146,6 +147,7 @@ object Radio {
                 // A replayed copy isn't added to the history, or going back would loop over the same songs.
                 if (previous != null && !previousWasReplay && previous.id != next?.id) {
                     history.value = (listOf(previous) + history.value).take(HISTORY_LIMIT)
+                    Prefs.saveHistory(history.value)
                 }
                 // Moving off a replayed song to anything but another replay ends the walk back.
                 if (previousWasReplay && next?.id?.startsWith(REPLAY_PREFIX) != true) replaySource = null
@@ -155,6 +157,8 @@ object Radio {
                 scope.launch(Dispatchers.Main) { prunePlayed() }
                 if (player.mediaItemCount - player.currentMediaItemIndex <= REFILL_WHEN_REMAINING) refill()
             }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) = applyBoost()
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 Radio.isPlaying.value = isPlaying
@@ -173,6 +177,7 @@ object Radio {
             }
         })
 
+        applyBoost()
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         controller = MediaController.Builder(context, token).buildAsync()
     }
@@ -225,6 +230,12 @@ object Radio {
         }
     }
 
+    fun clearHistory() {
+        history.value = emptyList()
+        replaySource = null
+        Prefs.saveHistory(emptyList())
+    }
+
     fun signOut() {
         player.stop()
         player.clearMediaItems()
@@ -241,7 +252,7 @@ object Radio {
         thumbsUp.value = emptyList()
         thumbsDown.value = emptyList()
         upNext.value = emptyList()
-        history.value = emptyList()
+        clearHistory()
         loggedIn.value = false
     }
 
@@ -377,7 +388,8 @@ object Radio {
      */
     fun replay() {
         if (player.currentMediaItem == null) return
-        val source = replaySource ?: history.value.also {
+        // Songs restored from an earlier launch have no stream link left, so only this launch's can replay.
+        val source = replaySource ?: history.value.filter { it.audioUrl.isNotEmpty() }.also {
             replaySource = it // the history as it was when the walk back started
             replayPos = 0
         }
@@ -397,6 +409,23 @@ object Radio {
         player.addMediaItem(player.currentMediaItemIndex + 1, mediaItem(copy))
         player.seekToNextMediaItem()
         player.play()
+    }
+
+    private var enhancer: android.media.audiofx.LoudnessEnhancer? = null
+
+    /** Applies the volume boost to the player's audio; called when the setting or the audio session changes. */
+    fun applyBoost() {
+        runCatching {
+            enhancer?.release()
+            enhancer = null
+            val session = player.audioSessionId
+            if (Prefs.boostDb > 0 && session != C.AUDIO_SESSION_ID_UNSET) {
+                enhancer = android.media.audiofx.LoudnessEnhancer(session).apply {
+                    setTargetGain(Prefs.boostDb * 100)
+                    enabled = true
+                }
+            }
+        }
     }
 
     fun togglePlay() {

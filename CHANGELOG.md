@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+- The play history is saved between launches (the last 200 songs). Songs from an earlier launch are listed but can't be replayed, because their stream links expire. Sign out clears it, and so does the new Clear play history button.
+- Added Volume boost (Off, +3, +6 or +9 dB) under Settings > Audio, which was called Audio quality.
+- Added an About page in Settings with the app info, version, account, update settings, Clear play history and Sign out. The Updates page and the Sign out button on the main settings list are gone.
+- Rounder buttons in the White and Black themes (full pills instead of 6 dp corners), a pill tab bar, and rounder mini player, banners, search box and covers.
+
 ## 1.0.9
 - Every song's cover is now checked to actually load. If Pandora's art link is dead, the cover is looked up by artist and title; the station art is used only if that finds nothing too. This fixes songs that still showed the station art in 1.0.8.
 
