@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.2
+- The collapsed playback notification now shows Replay, Play/Pause and Skip. Expanding it shows all five buttons: Dislike, Replay, Play/Pause, Skip and Like.
+
 ## 1.1.1
 - The History list is now per station: it shows only the songs played on the station you're on, and Replay walks back through that station's songs only. The saved history keeps the last 50 songs per station.
 

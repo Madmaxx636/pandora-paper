@@ -15,6 +15,7 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
@@ -120,7 +121,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Notification buttons in a radio order: Dislike, Play/Pause, Skip, Like. The default puts the custom
+     * Notification buttons in a radio order: Dislike, Replay, Play/Pause, Skip, Like. The default puts the custom
      * buttons after the transport buttons, which leaves Dislike out of the collapsed view.
      */
     private class RadioNotificationProvider(context: Context) : DefaultMediaNotificationProvider(context) {
@@ -141,6 +142,24 @@ class PlaybackService : MediaLibraryService() {
                 addAll(transport)
                 like?.let(::add)
             }.build()
+        }
+
+        /**
+         * The collapsed notification has room for three buttons: Replay, Play/Pause and Skip, the ones used
+         * most. Expanding it shows all five (Dislike and Like at the ends).
+         */
+        override fun addNotificationActions(
+            mediaSession: MediaSession,
+            mediaButtons: ImmutableList<CommandButton>,
+            builder: androidx.core.app.NotificationCompat.Builder,
+            actionFactory: MediaNotification.ActionFactory,
+        ): IntArray {
+            super.addNotificationActions(mediaSession, mediaButtons, builder, actionFactory)
+            val compact = mediaButtons.indices.filter { i ->
+                val b = mediaButtons[i]
+                b.sessionCommand?.customAction == ACTION_REPLAY || (b.sessionCommand == null)
+            }
+            return compact.take(3).toIntArray()
         }
     }
 
