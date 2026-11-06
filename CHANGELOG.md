@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.1
+- The History list is now per station: it shows only the songs played on the station you're on, and Replay walks back through that station's songs only. The saved history keeps the last 50 songs per station.
+
 ## 1.1.0
 - The play history is saved between launches (the last 200 songs). Songs from an earlier launch are listed but can't be replayed, because their stream links expire. Sign out clears it, and so does the new Clear play history button.
 - Added Volume boost (Off, +3, +6 or +9 dB) under Settings > Audio, which was called Audio quality.

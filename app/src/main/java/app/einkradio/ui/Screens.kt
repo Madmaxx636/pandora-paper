@@ -301,7 +301,7 @@ fun NowPlayingScreen() {
 
         Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
             when {
-                view == VIEW_HISTORY -> TrackList(history, "Nothing played yet")
+                view == VIEW_HISTORY -> TrackList(Radio.historyOf(history, station?.token), "Nothing played yet on this station")
                 view == VIEW_QUEUE -> TrackList(upNext, "Nothing queued yet")
                 t == null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(

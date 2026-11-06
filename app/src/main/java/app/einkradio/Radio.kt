@@ -42,7 +42,8 @@ import kotlinx.coroutines.withContext
 /** Process-wide player and Pandora session; the UI and [PlaybackService] both use it. */
 object Radio {
     private const val REFILL_WHEN_REMAINING = 2
-    private const val HISTORY_LIMIT = 200
+    private const val HISTORY_LIMIT = 50 // songs kept per station
+    private const val HISTORY_TOTAL = 1000
     private const val REPLAY_PREFIX = "replay:"
     private const val WIFI_ONLY_MESSAGE = "Wi-Fi only is on and this connection is metered."
 
@@ -111,7 +112,7 @@ object Radio {
     val searchResults = MutableStateFlow<SearchResults?>(null)
     val searching = MutableStateFlow(false)
 
-    /** Songs already played, most recent first. Kept between launches. */
+    /** Songs already played on every station, most recent first. Kept between launches; shown per station. */
     val history = MutableStateFlow<List<Track>>(emptyList())
 
     /** Sleep timer length in minutes (0 = off) and the wall-clock time it fires. */
@@ -146,7 +147,7 @@ object Radio {
                 val previousWasReplay = previous?.id?.startsWith(REPLAY_PREFIX) == true
                 // A replayed copy isn't added to the history, or going back would loop over the same songs.
                 if (previous != null && !previousWasReplay && previous.id != next?.id) {
-                    history.value = (listOf(previous) + history.value).take(HISTORY_LIMIT)
+                    history.value = trimHistory(listOf(previous) + history.value)
                     Prefs.saveHistory(history.value)
                 }
                 // Moving off a replayed song to anything but another replay ends the walk back.
@@ -229,6 +230,16 @@ object Radio {
             }
         }
     }
+
+    /** Keeps the newest [HISTORY_LIMIT] songs of each station, so a busy station doesn't push out the others. */
+    private fun trimHistory(all: List<Track>): List<Track> {
+        val counts = HashMap<String?, Int>()
+        return all.filter { t -> counts.merge(t.stationToken, 1, Int::plus)!! <= HISTORY_LIMIT }.take(HISTORY_TOTAL)
+    }
+
+    /** The history of one station, most recent first. */
+    fun historyOf(all: List<Track>, stationToken: String?): List<Track> =
+        all.filter { it.stationToken == stationToken }
 
     fun clearHistory() {
         history.value = emptyList()
@@ -389,7 +400,7 @@ object Radio {
     fun replay() {
         if (player.currentMediaItem == null) return
         // Songs restored from an earlier launch have no stream link left, so only this launch's can replay.
-        val source = replaySource ?: history.value.filter { it.audioUrl.isNotEmpty() }.also {
+        val source = replaySource ?: historyOf(history.value, station.value?.token).filter { it.audioUrl.isNotEmpty() }.also {
             replaySource = it // the history as it was when the walk back started
             replayPos = 0
         }
