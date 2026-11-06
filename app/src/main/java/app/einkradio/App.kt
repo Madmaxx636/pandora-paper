@@ -8,5 +8,6 @@ class App : Application() {
         Prefs.init(this)
         Radio.init(this)
         Radio.autoLogin()
+        PlayerWidgets.start(this)
     }
 }

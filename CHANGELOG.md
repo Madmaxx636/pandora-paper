@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.0
+- Added a home-screen widget (4x2, resizable) with the song's artwork, title and "Artist · Station", and Dislike, Replay, Play/Pause, Skip and Like buttons that work without opening the app. Tapping the artwork or title opens the app on the Playing tab. It is black on white in the White theme and white on dark otherwise.
+
 ## 1.1.2
 - The collapsed playback notification now shows Replay, Play/Pause and Skip. Expanding it shows all five buttons: Dislike, Replay, Play/Pause, Skip and Like.
 

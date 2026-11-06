@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Pandora Paper</string>
+    <string name="w_desc">Now playing, with replay, skip, like and dislike</string>
+    <string name="w_dislike">Dislike</string>
+    <string name="w_replay">Replay earlier song</string>
+    <string name="w_play">Play or pause</string>
+    <string name="w_skip">Skip</string>
+    <string name="w_like">Like</string>
 </resources>
