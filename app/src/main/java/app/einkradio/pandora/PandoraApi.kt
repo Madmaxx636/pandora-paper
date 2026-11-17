@@ -336,7 +336,7 @@ class PandoraApi {
     } catch (e: PandoraException) {
         val user = savedUser
         val pass = savedPass
-        if (e.code != INVALID_AUTH_TOKEN || user == null || pass == null) throw e
+        if ((e.code != INVALID_AUTH_TOKEN && e.code != INVALID_PARTNER_LOGIN) || user == null || pass == null) throw e
         login(user, pass)
         block()
     }
@@ -394,6 +394,7 @@ class PandoraApi {
     private companion object {
         const val HOST = "tuner.pandora.com"
         const val INVALID_AUTH_TOKEN = 1001
+        const val INVALID_PARTNER_LOGIN = 1002
 
         // Public "android" partner credentials, as documented in the API write-up above.
         const val PARTNER_USER = "android"

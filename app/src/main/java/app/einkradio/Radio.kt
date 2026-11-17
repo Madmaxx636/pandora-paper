@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 /** Process-wide player and Pandora session; the UI and [PlaybackService] both use it. */
 object Radio {
     private const val REFILL_WHEN_REMAINING = 2
+    private const val MAX_RECOVERIES = 3
     private const val HISTORY_LIMIT = 50 // songs kept per station
     private const val HISTORY_TOTAL = 1000
     private const val REPLAY_PREFIX = "replay:"
@@ -57,6 +58,8 @@ object Radio {
     // is, and a counter so each replayed copy gets its own id. Null means no walk is in progress.
     private var replaySource: List<Track>? = null
     private var replayPos = 0
+    /** Restarts of the station after playback errors, since the last time a song played. */
+    private var recoveries = 0
     private var replayCount = 0
 
     private lateinit var appContext: Context
@@ -167,13 +170,20 @@ object Radio {
                 schedulePauseStop(paused = !isPlaying && !player.playWhenReady)
             }
 
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) recoveries = 0
+            }
+
             override fun onPlayerError(e: PlaybackException) {
-                error.value = "Playback error: ${e.errorCodeName}"
-                if (player.hasNextMediaItem()) {
-                    player.seekToNextMediaItem()
-                    player.prepare()
+                // Stream links expire, so after a long pause the song, and every one queued behind it, can
+                // fail to load. Skipping along the queue only finds more dead links and leaves the player
+                // stopped. Starting the station again fetches fresh ones; give up after a few tries in a row.
+                val s = station.value
+                if (s != null && recoveries < MAX_RECOVERIES) {
+                    recoveries++
+                    play(s)
                 } else {
-                    refill()
+                    error.value = "Playback error: ${e.errorCodeName}"
                 }
             }
         })
@@ -440,11 +450,34 @@ object Radio {
     }
 
     fun togglePlay() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.isPlaying) player.pause() else resume()
+    }
+
+    /**
+     * Starts or resumes playback. After an error, or once playback was stopped, the player is idle and
+     * play() alone does nothing, so the station is started again for fresh songs.
+     */
+    fun resume() {
+        val s = station.value
+        if (player.playbackState == Player.STATE_IDLE || player.playerError != null) {
+            if (s != null) {
+                recoveries = 0
+                play(s)
+                return
+            }
+            player.prepare()
+        }
+        player.play()
     }
 
     /** Advances to the next queued track. Limits, if any, are whatever Pandora enforces. */
     fun skip() {
+        val s = station.value
+        if (s != null && (player.playbackState == Player.STATE_IDLE || player.playerError != null)) {
+            recoveries = 0
+            play(s)
+            return
+        }
         if (player.hasNextMediaItem()) player.seekToNextMediaItem() else refill()
     }
 

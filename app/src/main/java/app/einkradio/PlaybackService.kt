@@ -112,6 +112,7 @@ class PlaybackService : MediaLibraryService() {
 
         override fun isCommandAvailable(command: Int): Boolean = availableCommands.contains(command)
 
+        override fun play() = Radio.resume()
         override fun seekToNext() = Radio.skip()
         override fun seekToNextMediaItem() = Radio.skip()
         override fun seekToPrevious() = Unit

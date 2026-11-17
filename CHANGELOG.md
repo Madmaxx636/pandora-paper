@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+- Fixed playback stalling after a long time: Play, Skip and the other controls did nothing until the app was restarted. Pandora's song links expire, so after a long pause the loaded songs could all fail and leave the player stopped. After a playback error the app now restarts the station to fetch fresh songs (up to three tries in a row), and Play or Skip on a stopped player does the same.
+- The app now logs back in if Pandora reports an expired partner session, not only an expired user session.
+
 ## 1.2.0
 - Added a home-screen widget (4x2, resizable) with the song's artwork, title and "Artist · Station", and Dislike, Replay, Play/Pause, Skip and Like buttons that work without opening the app. Tapping the artwork or title opens the app on the Playing tab. It is black on white in the White theme and white on dark otherwise.
 
