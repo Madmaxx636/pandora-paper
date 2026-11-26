@@ -21,8 +21,8 @@ android {
         applicationId = "app.einkradio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 121
-        versionName = "1.2.1"
+        versionCode = 130
+        versionName = "1.3.0"
     }
 
     signingConfigs {

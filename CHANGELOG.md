@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 - Added "Tired of this song" on the Playing screen: Pandora stops playing that song for about a month, and the app skips it. Added a Share button that sends the title and artist.
 - Fixed likes and dislikes failing on a song brought back with Replay: Pandora was sent the app's internal id instead of its own track token.
 - Playback now restarts by itself when the connection comes back after dropping mid-song.
