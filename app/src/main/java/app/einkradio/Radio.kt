@@ -189,6 +189,7 @@ object Radio {
         })
 
         applyBoost()
+        resumeWhenOnline()
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         controller = MediaController.Builder(context, token).buildAsync()
     }
@@ -430,6 +431,26 @@ object Radio {
         player.addMediaItem(player.currentMediaItemIndex + 1, mediaItem(copy))
         player.seekToNextMediaItem()
         player.play()
+    }
+
+    /**
+     * If the connection drops mid-song the player errors out and, with no network, can't restart itself.
+     * When a connection comes back while the player is still waiting to play, start the station again.
+     */
+    private fun resumeWhenOnline() {
+        val cm = appContext.getSystemService(ConnectivityManager::class.java) ?: return
+        cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                scope.launch {
+                    if (station.value != null && player.playWhenReady &&
+                        (player.playerError != null || player.playbackState == Player.STATE_IDLE)
+                    ) {
+                        recoveries = 0
+                        resume()
+                    }
+                }
+            }
+        })
     }
 
     private var enhancer: android.media.audiofx.LoudnessEnhancer? = null

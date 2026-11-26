@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Playback now restarts by itself when the connection comes back after dropping mid-song.
+- The cover-art cache is capped at 300 images instead of growing without limit.
+- Updated libraries: Media3 1.6.1, Compose 2025.05.01, Activity Compose 1.10.1, Coroutines 1.10.2.
+- Added unit tests for version comparison and song matching.
+- Fixed a misplaced comment and a formatting slip in the manifest.
+
 ## 1.2.1
 - Fixed playback stalling after a long time: Play, Skip and the other controls did nothing until the app was restarted. Pandora's song links expire, so after a long pause the loaded songs could all fail and leave the player stopped. After a playback error the app now restarts the station to fetch fresh songs (up to three tries in a row), and Play or Skip on a stopped player does the same.
 - The app now logs back in if Pandora reports an expired partner session, not only an expired user session.

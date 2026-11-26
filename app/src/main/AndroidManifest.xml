@@ -26,7 +26,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>        </activity>
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".PlaybackService"
@@ -51,7 +52,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Square copies of station art for the car; serves only images the app registered itself. -->
+        <!-- The home-screen widget and the receiver for its buttons. -->
         <receiver
             android:name=".PlayerWidget"
             android:exported="false">
@@ -64,6 +65,7 @@
         </receiver>
         <receiver android:name=".WidgetActions" android:exported="false" />
 
+        <!-- Square copies of song and station art for the car and widget; serves only images the app registered itself. -->
         <provider
             android:name=".ArtProvider"
             android:authorities="${applicationId}.art"

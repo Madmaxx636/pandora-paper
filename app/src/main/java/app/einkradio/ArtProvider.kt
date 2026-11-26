@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 object ArtCache {
     private const val SIDE = 512
     private const val MAX_BYTES = 6L * 1024 * 1024
+    private const val KEEP_FILES = 300
     private val ID = Regex("[0-9a-f]{32}")
     private val SIZE_IN_URL = Regex("W\\d+H\\d+")
 
@@ -54,9 +55,19 @@ object ArtCache {
             val bitmap = try { fetch(candidate) } catch (e: Exception) { null } ?: continue
             val tmp = File(dir, "$id.tmp")
             tmp.outputStream().use { centreSquare(bitmap).compress(Bitmap.CompressFormat.JPEG, 90, it) }
-            if (tmp.renameTo(out)) return out
+            if (tmp.renameTo(out)) {
+                prune(dir)
+                return out
+            }
         }
         return null
+    }
+
+    /** Keeps the cache from growing for ever: past [KEEP_FILES] images, the least recently written go. */
+    private fun prune(dir: File) {
+        val files = dir.listFiles { f -> f.extension == "jpg" } ?: return
+        if (files.size <= KEEP_FILES) return
+        files.sortedBy { it.lastModified() }.take(files.size - KEEP_FILES).forEach { it.delete() }
     }
 
     private fun fetch(url: String): Bitmap? {
