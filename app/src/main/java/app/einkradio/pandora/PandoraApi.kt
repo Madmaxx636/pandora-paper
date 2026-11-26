@@ -44,6 +44,12 @@ data class Track(
      * fresh track token, so ratings (which belong to the song) can't be matched on that.
      */
     val ratingKey: String get() = "${artist.trim().lowercase()}|${title.trim().lowercase()}"
+
+    /**
+     * The track token Pandora knows this play by. A replayed copy carries a "replay:N:" prefix on its id
+     * so the queue can tell it apart; Pandora needs the original token.
+     */
+    val pandoraToken: String get() = if (id.startsWith("replay:")) id.removePrefix("replay:").substringAfter(':') else id
 }
 
 /** The songs thumbed up and down on one station. A track's [Track.id] here is its feedback id. */
@@ -320,9 +326,14 @@ class PandoraApi {
             "station.addFeedback",
             JSONObject()
                 .put("stationToken", stationToken)
-                .put("trackToken", track.id)
+                .put("trackToken", track.pandoraToken)
                 .put("isPositive", positive),
         ).optString("feedbackId").takeIf { it.isNotEmpty() }
+    }
+
+    /** "I'm tired of this song": Pandora stops playing it for about a month, without rating it. */
+    fun sleepSong(track: Track) {
+        authed { call("user.sleepSong", JSONObject().put("trackToken", track.pandoraToken)) }
     }
 
     fun removeRating(feedbackId: String) {

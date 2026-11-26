@@ -14,4 +14,10 @@ class TrackTest {
 
     @Test fun ratingKeyDiffersBySong() =
         assertNotEquals(track("a", "Bing Crosby", "White Christmas").ratingKey, track("a", "Bing Crosby", "Silent Night").ratingKey)
+
+    @Test fun pandoraTokenStripsReplayPrefix() =
+        assertEquals("abc123", track("replay:2:abc123", "A", "B").pandoraToken)
+
+    @Test fun pandoraTokenOfNormalTrackIsItsId() =
+        assertEquals("abc123", track("abc123", "A", "B").pandoraToken)
 }

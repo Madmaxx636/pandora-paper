@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Added "Tired of this song" on the Playing screen: Pandora stops playing that song for about a month, and the app skips it. Added a Share button that sends the title and artist.
+- Fixed likes and dislikes failing on a song brought back with Replay: Pandora was sent the app's internal id instead of its own track token.
 - Playback now restarts by itself when the connection comes back after dropping mid-song.
 - The cover-art cache is capped at 300 images instead of growing without limit.
 - Updated libraries: Media3 1.6.1, Compose 2025.05.01, Activity Compose 1.10.1, Coroutines 1.10.2.

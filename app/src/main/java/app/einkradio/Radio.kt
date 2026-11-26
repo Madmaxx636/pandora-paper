@@ -532,6 +532,19 @@ object Radio {
      * Thumbs-down, or undo it if the song is already disliked. Disliking the playing song skips it,
      * disliking a queued song drops it from the queue, and a played song just keeps the rating.
      */
+    /** Tells Pandora not to play this song for a while, then moves on. */
+    fun tiredOfSong() {
+        val t = track.value ?: return
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { api.sleepSong(t) }
+                skip()
+            } catch (e: Exception) {
+                error.value = e.message ?: "Couldn't save that"
+            }
+        }
+    }
+
     fun ban(target: Track? = track.value) {
         val t = target ?: return
         val key = t.ratingKey

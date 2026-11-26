@@ -339,7 +339,21 @@ fun NowPlayingScreen() {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
+                val context = LocalContext.current
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Btn("Tired of this song", Modifier.weight(1f), compact = true) { Radio.tiredOfSong() }
+                    Btn("Share", compact = true) {
+                        val text = "${t.title} - ${t.artist}"
+                        context.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text),
+                                null,
+                            ),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
             ProgressRow()
             Spacer(Modifier.height(12.dp))
